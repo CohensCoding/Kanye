@@ -1,0 +1,21 @@
+.DS_Store
+.venv/
+__pycache__/
+*.py[cod]
+
+# Secrets
+.env
+
+# Generated outputs / caches
+.cache/
+failed_tracks.txt
+extraction_warnings.txt
+kanye_lyrics.csv
+kanye_lyrics.json
+kanye_verses_only.csv
+kanye_verses_only.json
+kanye_verses_only.backup_*.csv
+
+# Large artifacts / local-only
+data/
+*.pdf
