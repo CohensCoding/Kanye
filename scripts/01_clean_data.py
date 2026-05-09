@@ -1,21 +1,22 @@
 """
 01_clean_data.py — Build the canonical analyzable dataset.
 
-Reads:   kanye_verses_only.csv (output of fetch_kanye_lyrics.py)
-Writes:  data/kanye_cleaned.csv          — 287 analyzable tracks
+Reads:   kanye_verses_only.csv (output of fetch_kanye_lyrics.py + supplements)
+Writes:  data/kanye_cleaned.csv          — canonical analyzable tracks
          data/excluded_tracks.csv        — tracks dropped (with reasons)
 
 What it does:
-  1. Standardizes era labels (folds stragglers like "2008 features" into the right canonical era)
-  2. Imputes missing release_dates from canonical album release dates
-  3. Builds a unique track_id per (title, era) — handles real title collisions
-     like Hurricane 2018 (KSG) vs Hurricane 2021 (Donda)
-  4. Adds chronological era_rank (0 = Pre-Dropout, 17 = Cuck-era)
-  5. Excludes 29 tracks where Kanye's verses extracted as 0 words
-     (skits, choir-only pieces, feature extraction failures)
+  1. Standardizes era labels
+  2. Imputes missing release_dates from canonical album dates
+  3. Builds a unique track_id per (title, era)
+  4. Deduplicates when multiple supplements added the same track. When two rows
+     share a track_id, keep the one with the best extraction method
+     (targeted_marker > supplement_marker > targeted_lead > original).
+  5. Adds chronological era_rank
+  6. Excludes tracks where Kanye's verses extracted as 0 words
 
 Usage:
-  python scripts/01_clean_data.py [--input kanye_verses_only.csv] [--out-dir data/]
+  python scripts/01_clean_data.py
 """
 from __future__ import annotations
 import argparse
@@ -26,7 +27,6 @@ from pathlib import Path
 import pandas as pd
 
 
-# Canonical era release dates (used for imputing missing release_date values)
 ERA_DATES = {
     'Pre-Dropout era':                          '2003-01-01',
     'The College Dropout':                      '2004-02-10',
@@ -48,13 +48,6 @@ ERA_DATES = {
     'Bully build-up + Cuck/IAPW controversy':   '2025-06-01',
 }
 
-# Stragglers that came out of the scraper with non-canonical era labels
-ERA_REMAP = {
-    '2008 features':                '2008-06-01',  # bug in scraper; fold into Post-808s
-    '2009 — Post-808s feature run': 'Post-808s feature run',
-    '2020':                         'Donda',
-    '2024':                         'Vultures 1 + Vultures 2',
-}
 ERA_REMAP_RENAMES = {
     '2008 features':                'Post-808s feature run',
     '2009 — Post-808s feature run': 'Post-808s feature run',
@@ -62,13 +55,11 @@ ERA_REMAP_RENAMES = {
     '2024':                         'Vultures 1 + Vultures 2',
 }
 
-# Tracks that came back as `auto_recovered` need explicit overrides
 TRACK_OVERRIDES = {
     'Grammy Family': {'era_clean': 'Late Registration',         'date': '2006-06-01'},
     'Vultures':      {'era_clean': 'Vultures 1 + Vultures 2',   'date': '2024-02-10'},
 }
 
-# Chronological order for the era_rank column
 ERA_ORDER = [
     'Pre-Dropout era', 'The College Dropout', 'Late Registration', 'Graduation',
     '808s & Heartbreak', 'Post-808s feature run', 'G.O.O.D. Fridays + MBDTF',
@@ -80,15 +71,27 @@ ERA_ORDER = [
 ERA_RANK = {era: i for i, era in enumerate(ERA_ORDER)}
 
 
-def impute_date(row: pd.Series) -> str | None:
+def impute_date(row):
     raw = str(row['release_date']) if not pd.isna(row['release_date']) else ''
     if re.match(r'^\d{4}-\d{2}-\d{2}', raw):
         return raw[:10]
     if re.match(r'^\d{4}$', raw):
-        return f"{raw}-07-01"  # mid-year approximation for year-only dates
+        return f"{raw}-07-01"
     if row['track_title'] in TRACK_OVERRIDES:
         return TRACK_OVERRIDES[row['track_title']]['date']
     return ERA_DATES.get(row['era_clean'])
+
+
+def extraction_priority(method):
+    """Lower = better. Targeted/supplement extractions beat original ones."""
+    m = str(method or '')
+    if m.startswith('targeted_marker'):    return 0
+    if m.startswith('supplement_marker'):  return 1
+    if m.startswith('targeted_lead'):      return 2
+    if m.startswith('supplement_solo'):    return 3
+    if m.startswith('targeted_'):          return 4
+    if m.startswith('supplement_'):        return 5
+    return 6  # original scraper methods
 
 
 def main() -> int:
@@ -101,12 +104,10 @@ def main() -> int:
     df = pd.read_csv(args.input)
     print(f"Loaded {len(df)} tracks from {args.input}")
 
-    # 1. Standardize era labels
     df['era_clean'] = df['album_or_era'].replace(ERA_REMAP_RENAMES)
     for title, override in TRACK_OVERRIDES.items():
         df.loc[df['track_title'] == title, 'era_clean'] = override['era_clean']
 
-    # 2. Impute missing dates
     df['release_date_clean'] = df.apply(impute_date, axis=1)
     df['date_imputed'] = df.apply(
         lambda r: pd.isna(r['release_date'])
@@ -119,29 +120,43 @@ def main() -> int:
         print(missing[['track_title', 'album_or_era']].to_string(index=False))
         return 1
 
-    # 3. Build unique track_id
     df['track_id'] = df.apply(
         lambda r: re.sub(r'[^a-z0-9]+', '_', f"{r['track_title']}_{r['era_clean']}".lower()).strip('_'),
         axis=1,
     )
-    if df['track_id'].nunique() != len(df):
-        dupes = df[df['track_id'].duplicated(keep=False)]
-        print(f"WARN: {len(dupes)} non-unique track_ids:")
-        print(dupes[['track_title', 'era_clean', 'track_id']].to_string(index=False))
-        return 1
 
-    # 4. Status flag
+    # Smart deduplication: prefer better extraction methods
+    n_before = len(df)
+    if df['track_id'].nunique() != n_before:
+        dupes_before = df[df['track_id'].duplicated(keep=False)].sort_values('track_id')
+        print(f"\nFound {len(dupes_before)} rows across "
+              f"{dupes_before['track_id'].nunique()} duplicate track_ids. "
+              f"Picking best version of each:")
+        for tid, group in dupes_before.groupby('track_id'):
+            print(f"  {tid}:")
+            for _, r in group.iterrows():
+                method = r.get('extraction_method', '?')
+                kw = r.get('kanye_verse_word_count', 0)
+                prio = extraction_priority(method)
+                print(f"    [prio={prio}] method={method:<35} kanye_words={kw:>4}")
+
+        df['_prio'] = df['extraction_method'].apply(extraction_priority)
+        df = (df.sort_values(['track_id', '_prio', 'kanye_verse_word_count'],
+                             ascending=[True, True, False])
+                .drop_duplicates(subset='track_id', keep='first')
+                .drop(columns=['_prio'])
+                .reset_index(drop=True))
+        print(f"  Deduplicated: {n_before} -> {len(df)} rows")
+
     df['analysis_status'] = df['kanye_verse_word_count'].apply(
         lambda w: 'excluded_no_content' if w == 0 else 'analyze'
     )
 
-    # 5. Chronology
     df['era_rank'] = df['era_clean'].map(ERA_RANK).fillna(99).astype(int)
     df['date_obj'] = pd.to_datetime(df['release_date_clean'], errors='coerce')
     df['year'] = df['date_obj'].dt.year.astype('Int64')
     df = df.sort_values(['era_rank', 'date_obj', 'track_title']).reset_index(drop=True)
 
-    # Report
     n_analyze = (df['analysis_status'] == 'analyze').sum()
     n_excl = (df['analysis_status'] == 'excluded_no_content').sum()
     print(f"\nCleaning report:")
@@ -151,7 +166,6 @@ def main() -> int:
     print(f"  Imputed:    {df['date_imputed'].sum()} dates filled from era defaults")
     print(f"  Year range: {df['year'].min()}–{df['year'].max()}")
 
-    # Save
     analyzable = df[df['analysis_status'] == 'analyze'].copy()
     analyzable.to_csv(out_dir / 'kanye_cleaned.csv', index=False)
     df[df['analysis_status'] == 'excluded_no_content'][
