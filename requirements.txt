@@ -11,3 +11,10 @@ ruptures==1.1.9
 scipy==1.13.1
 scikit-learn==1.6.1
 sentence-transformers==3.0.1
+spacy==3.8.11
+# Then install English pipeline: /usr/bin/python3 -m spacy download en_core_web_sm
+lexical-diversity>=0.1.0
+lexicalrichness>=0.1.9
+vaderSentiment==3.3.2
+transformers>=4.41.0
+torch>=2.2.0

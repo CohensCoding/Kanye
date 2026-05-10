@@ -1,0 +1,11 @@
+track_title,year,status,genius_url,detail,parser_note
+Impossible,2006,ok,https://genius.com/Kanye-west-impossible-lyrics,marker_match kanye_wc=148 full_wc=900,
+I Love It,2018,ok,https://genius.com/Lil-pump-and-kanye-west-i-love-it-lyrics,marker_match kanye_wc=179 full_wc=473,
+Only One,2014,ok,https://genius.com/Kanye-west-only-one-lyrics,lead_no_markers kanye_wc=435 full_wc=452,
+All Day,2015,ok,https://genius.com/Kanye-west-all-day-lyrics,marker_match kanye_wc=603 full_wc=818,
+Freaky Girl Edit,2018,ok,https://genius.com/Lil-pump-and-kanye-west-i-love-it-freaky-girl-edit-lyrics,marker_match kanye_wc=335 full_wc=467,
+FourFiveSeconds,2015,ok,https://genius.com/Rihanna-kanye-west-and-paul-mccartney-fourfiveseconds-lyrics,marker_match kanye_wc=177 full_wc=366,
+Billie Jean (2008 Kanye West Mix),2008,ok,https://genius.com/Michael-jackson-billie-jean-2008-kanye-west-mix-lyrics,marker_match kanye_wc=106 full_wc=505 has_kanye_markers_or_extracted_content,
+no AI,2026,skipped_metadata_disagreement,,Canonical title vs leak tracklist unresolved — see metadata_disagreements.csv,
+Ye vs. the People,2018,skipped_resolution_b,https://genius.com/Kanye-west-ye-vs-the-people-starring-ti-as-the-people-lyrics,Extraction not Kanye-only clean — see phase_3_95_log.md,
+Theraflu/Way Too Cold,2012,ok,https://genius.com/Kanye-west-and-dj-khaled-cold-lyrics,marker_match kanye_wc=444 full_wc=603,Lyrics fetched from kanye-west-and-dj-khaled-cold-lyrics; track also released under aliases Way Too Cold and Cold.
