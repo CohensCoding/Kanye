@@ -1,0 +1,30 @@
+track_id,track_title,era_clean,year,in_canonical_catalog,pdf_catalog_match,pdf_catalog_match_evidence,genius_url,url_credits_kanye,recommended_action
+the_good_the_bad_the_ugly_pre_dropout_era,"The Good, The Bad, The Ugly",Pre-Dropout era,2003,False,True,"The Good, The Bad, The Ugly",https://genius.com/Consequence-and-kanye-west-the-good-the-bad-the-ugly-lyrics,True,keep — matcher missed it
+go_late_registration,Go!,Late Registration,2005,False,True,Go!,https://genius.com/Common-go-lyrics,False,keep — matcher missed it
+top_this_late_registration,Top This,Late Registration,2005,False,True,Top This,https://genius.com/Bump-j-top-this-lyrics,False,keep — matcher missed it
+back_to_basics_late_registration,Back to Basics.,Late Registration,2005,False,True,Back to Basics.,https://genius.com/Kanye-west-back-to-basics-lyrics,True,keep — matcher missed it
+we_can_make_it_better_late_registration,We Can Make It Better,Late Registration,2005,False,True,We Can Make It Better,https://genius.com/Kanye-west-we-can-make-it-better-lyrics,True,keep — matcher missed it
+because_of_you_remix_graduation,Because of You (Remix),Graduation,2007,False,True,Because of You(Remix),https://genius.com/Ne-yo-because-of-you-remix-lyrics,False,keep — matcher missed it
+bittersweet_poetry_graduation,Bittersweet Poetry,Graduation,2007,False,True,BittersweetPoetry,https://genius.com/Kanye-west-bittersweet-poetry-lyrics,True,keep — matcher missed it
+buy_you_a_drank_remix_graduation,Buy You a Drank (Remix),Graduation,2007,False,True,Buy You a Drank (Remix),https://genius.com/T-pain-buy-you-a-drank-remix-snippet-lyrics,False,keep — matcher missed it
+good_night_graduation,Good Night,Graduation,2007,False,True,Good Night,https://genius.com/Kanye-west-good-night-lyrics,True,keep — matcher missed it
+mama_s_boyfriend_post_808s_feature_run,Mama's Boyfriend,Post-808s feature run,2009,False,True,Mama's Boyfriend,https://genius.com/Kanye-west-mamas-boyfriend-lyrics,True,keep — matcher missed it
+awesome_cruel_summer_yeezus_build_up,Awesome,Cruel Summer + Yeezus build-up,2012,False,True,Awesome,https://genius.com/Kanye-west-awesome-lyrics,True,keep — matcher missed it
+after_you_yeezus,After You,Yeezus,2013,False,True,After You,https://genius.com/Kanye-west-after-you-lyrics,True,keep — matcher missed it
+dat_side_quiet_year,Dat Side,Quiet year,2017,False,True,Dat Side,https://genius.com/Cyhi-dat-side-lyrics,False,keep — matcher missed it
+feel_me_quiet_year,Feel Me,Quiet year,2017,False,True,Feel Me,https://genius.com/Tyga-feel-me-lyrics,False,keep — matcher missed it
+glow_quiet_year,Glow,Quiet year,2017,False,True,Glow,https://genius.com/Drake-glow-lyrics,False,keep — matcher missed it
+love_yourself_quiet_year,Love Yourself,Quiet year,2017,False,True,Love Yourself,https://genius.com/Mary-j-blige-love-yourself-lyrics,False,keep — matcher missed it
+the_storm_xxx_wyoming_sessions_ye_ksg,The Storm/XXX,Wyoming Sessions (ye / KSG),2018,False,True,The Storm/XXX,https://genius.com/Kanye-west-the-storm-lyrics,True,keep — matcher missed it
+we_got_love_wyoming_sessions_ye_ksg,We Got Love,Wyoming Sessions (ye / KSG),2018,False,True,We Got Love,https://genius.com/Kanye-west-we-got-love-lyrics,True,keep — matcher missed it
+law_of_attraction_wyoming_sessions_ye_ksg,Law of Attraction,Wyoming Sessions (ye / KSG),2018,False,True,Law of Attraction,https://genius.com/Kanye-west-law-of-attraction-cyhi-reference-lyrics,True,keep — matcher missed it
+new_body_wyoming_sessions_ye_ksg,New Body,Wyoming Sessions (ye / KSG),2018,False,True,NewBody,https://genius.com/Kanye-west-new-body-lyrics,True,keep — matcher missed it
+glory_jesus_is_king,Glory,Jesus Is King,2019,False,True,Glory,https://genius.com/Kanye-west-and-dr-dre-glory-lyrics,True,keep — matcher missed it
+nah_nah_nah_jesus_is_king,Nah Nah Nah,Jesus Is King,2019,False,True,Nah Nah Nah,https://genius.com/Kanye-west-nah-nah-nah-lyrics,True,keep — matcher missed it
+go2damoon_donda,Go2DaMoon,Donda,2020,False,True,Go2DaMoon,https://genius.com/Playboi-carti-go2damoon-lyrics,False,keep — matcher missed it
+rock_n_roll_donda_2,Rock N Roll,Donda 2,2022,False,True,Rock N Roll,https://genius.com/Pusha-t-rock-n-roll-lyrics,False,keep — matcher missed it
+mr_miyagi_donda_2,Mr. Miyagi,Donda 2,2022,False,True,Mr.Miyagi,https://genius.com/Ye-mr-miyagi-lyrics,True,keep — matcher missed it
+gun_to_my_head_vultures_1_vultures_2,Gun to My Head,Vultures 1 + Vultures 2,2024,False,True,Gun to My Head,https://genius.com/Kanye-west-and-ty-dolla-sign-and-kid-cudi-gun-to-my-head-lyrics,True,keep — matcher missed it
+god_s_in_control_bully_build_up_cuck_iapw_controversy,God's in Control,Bully build-up + Cuck/IAPW controversy,2025,False,True,God's in Control,unknown,unknown,keep — matcher missed it
+mission_control_bully_build_up_cuck_iapw_controversy,Mission Control,Bully build-up + Cuck/IAPW controversy,2025,False,True,MissionControl,https://genius.com/Kanye-west-mission-control-lyrics,True,keep — matcher missed it
+melrose_bully_build_up_cuck_iapw_controversy,Melrose,Bully build-up + Cuck/IAPW controversy,2025,False,True,Melrose,https://genius.com/Kanye-west-melrose-lyrics,True,keep — matcher missed it

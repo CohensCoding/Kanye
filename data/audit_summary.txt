@@ -1,10 +1,10 @@
 DEEP COMPLETENESS AUDIT
 ==============================================================================
-Dataset rows:                                 401
+Dataset rows:                                 427
 
 Tier 1 — canonical album tracks:              265/267  (99%)
-Tier 2 — Kanye-led non-album (singles/EP):    14/15  (93%)
-Tier 3 — features on others' tracks:          101/130  (78%)
+Tier 2 — Kanye-led non-album (singles/EP):    12/15  (80%)
+Tier 3 — features on others' tracks:          106/130  (82%)
 
 Tier 1 needs near-100%. Tier 2 should be high. Tier 3 gaps are acceptable.
 

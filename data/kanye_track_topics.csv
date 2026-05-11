@@ -1,5 +1,4 @@
 track_id,track_title,era_clean,era_rank,release_date_clean,year,topic_id
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003-01-01,2003,0
 all_falls_down_pre_dropout_era,All Falls Down,Pre-Dropout era,0,2003-07-01,2003,0
 champions_pre_dropout_era,Champions,Pre-Dropout era,0,2003-07-01,2003,0
 get_by_remix_pre_dropout_era,Get By (Remix),Pre-Dropout era,0,2003-07-01,2003,0
@@ -85,7 +84,6 @@ good_life_graduation,Good Life,Graduation,3,2007-07-01,2007,0
 good_night_graduation,Good Night,Graduation,3,2007-07-01,2007,0
 homecoming_graduation,Homecoming,Graduation,3,2007-07-01,2007,0
 in_the_mood_graduation,In the Mood,Graduation,3,2007-07-01,2007,0
-pro_nails_graduation,Pro Nails,Graduation,3,2007-07-01,2007,0
 southside_graduation,Southside,Graduation,3,2007-07-01,2007,0
 stay_up_viagra_graduation,Stay Up! (Viagra),Graduation,3,2007-07-01,2007,0
 big_brother_graduation,Big Brother,Graduation,3,2007-09-11,2007,1
@@ -186,7 +184,6 @@ creepers_cruel_summer_yeezus_build_up,Creepers,Cruel Summer + Yeezus build-up,8,
 i_don_t_like_remix_cruel_summer_yeezus_build_up,I Don't Like (Remix),Cruel Summer + Yeezus build-up,8,2012-09-18,2012,0
 mercy_cruel_summer_yeezus_build_up,Mercy,Cruel Summer + Yeezus build-up,8,2012-09-18,2012,0
 sin_city_cruel_summer_yeezus_build_up,Sin City,Cruel Summer + Yeezus build-up,8,2012-09-18,2012,0
-skyscrapers_cruel_summer_yeezus_build_up,Skyscrapers,Cruel Summer + Yeezus build-up,8,2012-09-18,2012,0
 the_morning_cruel_summer_yeezus_build_up,The Morning,Cruel Summer + Yeezus build-up,8,2012-09-18,2012,0
 way_too_cold_cruel_summer_yeezus_build_up,Way Too Cold,Cruel Summer + Yeezus build-up,8,2012-09-18,2012,0
 white_dress_cruel_summer_yeezus_build_up,White Dress,Cruel Summer + Yeezus build-up,8,2012-09-18,2012,0
@@ -270,7 +267,6 @@ one_minute_wyoming_sessions_ye_ksg,One Minute,Wyoming Sessions (ye / KSG),12,201
 watch_wyoming_sessions_ye_ksg,Watch,Wyoming Sessions (ye / KSG),12,2018-07-01,2018,0
 wouldn_t_leave_wyoming_sessions_ye_ksg,Wouldn't Leave,Wyoming Sessions (ye / KSG),12,2018-07-01,2018,0
 i_love_it_wyoming_sessions_ye_ksg,I Love It,Wyoming Sessions (ye / KSG),12,2018-09-06,2018,0
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019-07-01,2019,0
 everything_we_need_jesus_is_king,Everything We Need,Jesus Is King,13,2019-07-01,2019,0
 hands_on_jesus_is_king,Hands On,Jesus Is King,13,2019-07-01,2019,0
 use_this_gospel_jesus_is_king,Use This Gospel,Jesus Is King,13,2019-07-01,2019,0

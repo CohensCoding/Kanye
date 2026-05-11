@@ -1,51 +1,4 @@
 track_id,track_title,era_clean,era_rank,year,release_date_clean,line_index,line_text,vader_compound,vader_pos,vader_neu,vader_neg
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,0,"Alright. In case y'all don't know,",0.25,0.286,0.714,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,1,"he did ""H to the Izzo"", he did ""Takeover"", he did ""Guess Who's Back"", he did my joint ""Good to You"", he did ""Turn Out The Lights"".",0.4404,0.1,0.9,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,2,"Give it up for my nigga Kanye West, you know what I'm saying? Now Kanye, y'all also don't know my man got skills, he's a rapper, he's on my projects, so I want him to bust a verse, can we let my man bust a verse? What's up Kanye, what's up?",0.2774,0.041,0.959,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,3,"(They gonna play my beat, they gonna play my beat?)",0.5859,0.375,0.625,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,4,"Yeah, yeah, chops, listen.",0.5267,0.688,0.312,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,5,"Woo, woo, woo, mic check, mic check-",0.8519,0.699,0.301,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,6,"Golly, more of that bullshit ice rap",-0.6204,0.0,0.596,0.404
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,7,I got to 'pologize to Mos and Kweli (probably),0.0,0.0,1.0,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,8,But is it cool to rap about gold,0.4497,0.296,0.704,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,9,If I told the world I copped it from Ghana and Mali? (Mali!),0.0,0.0,1.0,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,10,First nigga with a Benz and a backpack,0.0,0.0,1.0,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,11,"Ice chain, Carti lens, and a knapsack",0.0,0.0,1.0,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,12,Always said if I rapped I'd say somethin' significant,0.2023,0.184,0.816,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,13,"But now I'm rappin' 'bout money, hoes, and rims again",0.0,0.0,1.0,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,14,And it's still about the Benjamins,0.0,0.0,1.0,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,15,Big faced hundreds and whatever other synonyms,0.0,0.0,1.0,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,16,Strippers named Cinnamon,0.0,0.0,1.0,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,17,More chips than Pentium,0.0,0.0,1.0,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,18,What'cha gon' buy next? Whatever new trend it is,0.0,0.0,1.0,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,19,I'm tryin' to spend my stacks,0.0,0.0,1.0,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,20,"And I'm so broke I look back like ""Damn, was I on crack?""",-0.5881,0.133,0.531,0.336
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,21,"I mean two platinum chains, was I on that?",0.0,0.0,1.0,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,22,What the hell was wrong with me dog?,-0.8271,0.0,0.438,0.562
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,23,Sing along with me y'all,0.0,0.0,1.0,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,24,New York City here! New York City here!,0.0,0.0,1.0,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,25,New York City here! New York City here!,0.0,0.0,1.0,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,26,"It's like, guess who's",0.3612,0.455,0.545,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,27,bizzack,0.0,0.0,1.0,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,28,", back on the track with the blow",0.0,0.0,1.0,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,29,"Kanye to-the, representing his gold",0.0,0.0,1.0,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,30,"Guess who's come back, better than I supposed",0.4404,0.293,0.707,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,31,"Heard that beat, shit it's all I know",-0.5574,0.0,0.66,0.34
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,32,"Guess who's bizzack, live from the Plaza",0.0,0.0,1.0,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,33,The Roc' is definitely in the building,0.4019,0.31,0.69,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,34,"Back on the track, yeah, yeah, yeah",0.6808,0.623,0.377,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,35,"I say guess who's bizzack, Kweli, Kanye, and Mos",0.0,0.0,1.0,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,36,Punk niggas getting way too close,-0.34,0.0,0.676,0.324
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,37,Broadway doing them all day,0.0,0.0,1.0,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,38,Niggas  but don't take it the wrong way,-0.705,0.0,0.506,0.494
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,39,"Doing Iving Plaza, causing disaster",-0.6249,0.0,0.494,0.506
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,40,You bring the time but we bring the prescription,0.0,0.0,1.0,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,41,Pick up your ears so you all could listen,0.0,0.0,1.0,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,42,I be killin' these niggas on this lyrical shit,-0.7184,0.0,0.538,0.462
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,43,"Mayonnaise colored Benz, I push miracle whips",0.5859,0.388,0.612,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,44,"And since takeover, it seems like the whole hood want to get a Jimmie Jones makeover",0.4215,0.213,0.787,0.0
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,45,Niggas forcing me to keep the heater,-0.34,0.0,0.714,0.286
-live_from_irving_plaza_pre_dropout_era,Live from Irving Plaza,Pre-Dropout era,0,2003,2003-01-01,46,"Black strap, white handle, I got Jungle Fever",0.0,0.0,1.0,0.0
 all_falls_down_pre_dropout_era,All Falls Down,Pre-Dropout era,0,2003,2003-07-01,0,"Oh, when it all, it all falls down",0.0,0.0,1.0,0.0
 all_falls_down_pre_dropout_era,All Falls Down,Pre-Dropout era,0,2003,2003-07-01,1,"Yeah, this the real one, baby",0.296,0.306,0.694,0.0
 all_falls_down_pre_dropout_era,All Falls Down,Pre-Dropout era,0,2003,2003-07-01,2,"I'm tellin' you all, it all falls down",0.0,0.0,1.0,0.0
@@ -4349,14 +4302,6 @@ in_the_mood_graduation,In the Mood,Graduation,3,2007,2007-07-01,44,I wear the ni
 in_the_mood_graduation,In the Mood,Graduation,3,2007,2007-07-01,45,Navigate through the truly bizarre,0.1531,0.354,0.366,0.28
 in_the_mood_graduation,In the Mood,Graduation,3,2007,2007-07-01,46,"Who we are, who we is, it's the kids that stay true to this life",0.4215,0.167,0.833,0.0
 in_the_mood_graduation,In the Mood,Graduation,3,2007,2007-07-01,47,"And if the mood is right, we gon' do it tonight",0.0,0.0,1.0,0.0
-pro_nails_graduation,Pro Nails,Graduation,3,2007,2007-07-01,0,"Aye, yo this motherfucka's jammin'; I'm on it, it's an anthem",0.0,0.0,1.0,0.0
-pro_nails_graduation,Pro Nails,Graduation,3,2007,2007-07-01,1,Who is that in the Phantom? Please no cameras,0.0258,0.2,0.609,0.191
-pro_nails_graduation,Pro Nails,Graduation,3,2007,2007-07-01,2,They gone have me on Concrete Loop in my pajamas,0.0,0.0,1.0,0.0
-pro_nails_graduation,Pro Nails,Graduation,3,2007,2007-07-01,3,"To hide the goods, I would need pants big as Hammer's",-0.1779,0.0,0.855,0.145
-pro_nails_graduation,Pro Nails,Graduation,3,2007,2007-07-01,4,"I be tippin' them dancers, they be sayin' I'm handsome",0.4939,0.262,0.738,0.0
-pro_nails_graduation,Pro Nails,Graduation,3,2007,2007-07-01,5,I was pretty before the dough but now I'm just the man,0.2732,0.16,0.84,0.0
-pro_nails_graduation,Pro Nails,Graduation,3,2007,2007-07-01,6,"You remind me of my old chick, on that '84 shit",-0.5574,0.0,0.735,0.265
-pro_nails_graduation,Pro Nails,Graduation,3,2007,2007-07-01,7,"Oh shit, did you see the way she got her toes did?",-0.5574,0.0,0.753,0.247
 southside_graduation,Southside,Graduation,3,2007,2007-07-01,0,"I know you thinking, thinking that it must be",0.0,0.0,1.0,0.0
 southside_graduation,Southside,Graduation,3,2007,2007-07-01,1,Armor-All flow 'cause it never get rusty,0.0,0.0,1.0,0.0
 southside_graduation,Southside,Graduation,3,2007,2007-07-01,2,"I ain't gotta say it, man, dog, trust me",0.5106,0.292,0.708,0.0
@@ -8720,14 +8665,6 @@ sin_city_cruel_summer_yeezus_build_up,Sin City,Cruel Summer + Yeezus build-up,8,
 sin_city_cruel_summer_yeezus_build_up,Sin City,Cruel Summer + Yeezus build-up,8,2012,2012-09-18,56,"Oh you know it, oh you know it",0.0,0.0,1.0,0.0
 sin_city_cruel_summer_yeezus_build_up,Sin City,Cruel Summer + Yeezus build-up,8,2012,2012-09-18,57,"Oh you know it, oh you know it",0.0,0.0,1.0,0.0
 sin_city_cruel_summer_yeezus_build_up,Sin City,Cruel Summer + Yeezus build-up,8,2012,2012-09-18,58,Oh you know it,0.0,0.0,1.0,0.0
-skyscrapers_cruel_summer_yeezus_build_up,Skyscrapers,Cruel Summer + Yeezus build-up,8,2012,2012-09-18,0,"My hands scrape the sky, I can't escape this high",-0.1326,0.0,0.856,0.144
-skyscrapers_cruel_summer_yeezus_build_up,Skyscrapers,Cruel Summer + Yeezus build-up,8,2012,2012-09-18,1,Sometimes I felt like I just couldn't wait to die,0.6854,0.414,0.586,0.0
-skyscrapers_cruel_summer_yeezus_build_up,Skyscrapers,Cruel Summer + Yeezus build-up,8,2012,2012-09-18,2,"If I fall, I can't fly, can't hate the sky",-0.3566,0.0,0.784,0.216
-skyscrapers_cruel_summer_yeezus_build_up,Skyscrapers,Cruel Summer + Yeezus build-up,8,2012,2012-09-18,3,For not slowin' me down before I hit the ground,0.0,0.0,1.0,0.0
-skyscrapers_cruel_summer_yeezus_build_up,Skyscrapers,Cruel Summer + Yeezus build-up,8,2012,2012-09-18,4,"Before I hit the town, I used to hit the weed",0.0,0.0,1.0,0.0
-skyscrapers_cruel_summer_yeezus_build_up,Skyscrapers,Cruel Summer + Yeezus build-up,8,2012,2012-09-18,5,Try to hang around thieves just tryna get degrees,-0.5106,0.0,0.708,0.292
-skyscrapers_cruel_summer_yeezus_build_up,Skyscrapers,Cruel Summer + Yeezus build-up,8,2012,2012-09-18,6,But I end up 'round rats just tryna get the cheese,0.0,0.0,1.0,0.0
-skyscrapers_cruel_summer_yeezus_build_up,Skyscrapers,Cruel Summer + Yeezus build-up,8,2012,2012-09-18,7,"It ain't gotta be all that, I ain't beggin', but, bitch, please",0.794,0.414,0.586,0.0
 the_morning_cruel_summer_yeezus_build_up,The Morning,Cruel Summer + Yeezus build-up,8,2012,2012-09-18,0,5 ContributorsIn The Morning Lyrics,0.0,0.0,1.0,0.0
 way_too_cold_cruel_summer_yeezus_build_up,Way Too Cold,Cruel Summer + Yeezus build-up,8,2012,2012-09-18,0,"Uhh, can the headphones go louder?",0.0,0.0,1.0,0.0
 way_too_cold_cruel_summer_yeezus_build_up,Way Too Cold,Cruel Summer + Yeezus build-up,8,2012,2012-09-18,1,Kanye West!,0.0,0.0,1.0,0.0
@@ -12045,38 +11982,6 @@ i_love_it_wyoming_sessions_ye_ksg,I Love It,Wyoming Sessions (ye / KSG),12,2018,
 i_love_it_wyoming_sessions_ye_ksg,I Love It,Wyoming Sessions (ye / KSG),12,2018,2018-09-06,15,"I like hearin' stories, I like that ho shit",0.1027,0.342,0.411,0.247
 i_love_it_wyoming_sessions_ye_ksg,I Love It,Wyoming Sessions (ye / KSG),12,2018,2018-09-06,16,"I wanna hear mo' shit, I like the ho shit",-0.6908,0.15,0.419,0.431
 i_love_it_wyoming_sessions_ye_ksg,I Love It,Wyoming Sessions (ye / KSG),12,2018,2018-09-06,17,"Send me some mo' shit, you triflin' ho bitch (Bitch, bitch, bitch)",-0.9628,0.0,0.271,0.729
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,0,Strange are the fates,-0.2023,0.0,0.625,0.375
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,1,That lead us away from the light,0.0,0.0,1.0,0.0
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,2,But once you stray from the path,0.0,0.0,1.0,0.0
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,3,There is no turning back,-0.296,0.0,0.645,0.355
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,4,No hope remains for me,-0.3412,0.0,0.624,0.376
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,5,I joined the army of darkness,-0.25,0.0,0.714,0.286
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,6,Very soon you'll feel my presence,0.0,0.0,1.0,0.0
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,7,And you'll wish to have never been born,0.4019,0.278,0.722,0.0
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,8,Once you decided who lived and who died,-0.5574,0.0,0.66,0.34
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,9,And then my time had come,0.0,0.0,1.0,0.0
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,10,That decision is now in my hands,0.0,0.0,1.0,0.0
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,11,I want to see you bleed,0.0772,0.206,0.794,0.0
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,12,We the chosen ones,0.0,0.0,1.0,0.0
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,13,To eradicate the sinners from this earth,0.0,0.0,1.0,0.0
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,14,Will appear in your dreams,0.4019,0.403,0.597,0.0
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,15,You will never wake up,0.0,0.0,1.0,0.0
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,16,Ashes to ashes,0.0,0.0,1.0,0.0
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,17,Dust to dust,0.0,0.0,1.0,0.0
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,18,Eternal rest,0.0,0.0,1.0,0.0
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,19,For the ones who'll die,-0.5994,0.0,0.506,0.494
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,20,Requiem aeternam- eternal rest,0.0,0.0,1.0,0.0
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,21,This is the hymn for the dying,0.0,0.0,1.0,0.0
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,22,Requiem aeternam- eternal rest,0.0,0.0,1.0,0.0
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,23,"Thou shall find peace, thou shall die",-0.1027,0.282,0.403,0.315
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,24,There's a thin line,0.0,0.0,1.0,0.0
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,25,Between good and evil,-0.3612,0.312,0.215,0.473
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,26,Once you cross it,0.0,0.0,1.0,0.0
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,27,There's no turning back,-0.296,0.0,0.577,0.423
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,28,Dangerous are the paths,-0.4767,0.0,0.492,0.508
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,29,That lead us away from the light,0.0,0.0,1.0,0.0
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,30,When we are into the darkness,-0.25,0.0,0.714,0.286
-eternal_rest_jesus_is_king,Eternal Rest,Jesus Is King,13,2019,2019-07-01,31,Only evil prevails,-0.6597,0.0,0.312,0.688
 everything_we_need_jesus_is_king,Everything We Need,Jesus Is King,13,2019,2019-07-01,0,"Woo-ooh, ooh-ooh",0.0,0.0,1.0,0.0
 everything_we_need_jesus_is_king,Everything We Need,Jesus Is King,13,2019,2019-07-01,1,"Switch your⁠, switch your attitude",0.0,0.0,1.0,0.0
 everything_we_need_jesus_is_king,Everything We Need,Jesus Is King,13,2019,2019-07-01,2,"Go 'head, level up yourself",0.0,0.0,1.0,0.0
