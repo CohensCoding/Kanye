@@ -20,6 +20,9 @@ Requires SPOTIFY_CLIENT_ID + SPOTIFY_CLIENT_SECRET in .env (never logged).
 
 Low Spotify fuzzy match (<85 RapidFuzz token_set_ratio): exit code 2 unless
 --accept-low-confidence (writes rows as not_on_spotify with parser_note).
+
+Spotify /v1/search errors: HTTP 400 → skip row with parser_note (no crash); 429 / 5xx →
+retry (Retry-After / exponential backoff); HTTP 401 → hard fail (SpotifyAuthError).
 """
 from __future__ import annotations
 
@@ -44,6 +47,7 @@ from bs4 import BeautifulSoup
 from bs4.element import Tag
 from dotenv import load_dotenv
 from rapidfuzz import fuzz
+from requests import Response
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FEATURES_CSV = PROJECT_ROOT / "data" / "kanye_track_features.csv"
@@ -91,6 +95,115 @@ FUZZ_THRESHOLD = 85.0
 SPOTIFY_GAP = 0.21
 
 _spotify_last = 0.0
+
+MSG_SPOTIFY_400 = (
+    "Spotify search returned 400 — query may have failed URL encoding or "
+    "contained unsupported characters"
+)
+
+
+class SpotifyAuthError(RuntimeError):
+    """Invalid or expired Spotify client credentials (HTTP 401)."""
+
+
+def _retry_after_seconds(resp: Response, *, cap: float = 30.0) -> float:
+    """Spotify may send large Retry-After during outages; cap avoids multi-hour bulk stalls."""
+    raw = (resp.headers.get("Retry-After") or "").strip()
+    if not raw:
+        return min(3.0, cap)
+    try:
+        return min(max(0.5, float(raw)), cap)
+    except ValueError:
+        return min(5.0, cap)
+
+
+def spotify_search(
+    token: str,
+    query: str,
+    *,
+    track_title: str,
+    limit: int = 15,
+) -> tuple[dict[str, Any], str | None]:
+    """
+    GET /v1/search (track). Returns (payload, parser_note).
+
+    parser_note is set when the search must be skipped for this row (HTTP 400,
+    exhausted 429/5xx retries, or other client errors). Caller writes not_on_spotify.
+
+    Raises SpotifyAuthError on HTTP 401 (credentials).
+    """
+    empty: dict[str, Any] = {"tracks": {"items": []}}
+    params = {"q": query, "type": "track", "limit": limit}
+    max_retries = 3  # after first failure → up to 4 attempts total
+
+    for attempt in range(max_retries + 1):
+        spotify_throttle()
+        try:
+            r = requests.get(
+                "https://api.spotify.com/v1/search",
+                headers={"Authorization": f"Bearer {token}"},
+                params=params,
+                timeout=60,
+            )
+        except requests.exceptions.RequestException as exc:
+            if attempt >= max_retries:
+                print(
+                    f"[phase4b] Spotify search network error track_title={track_title!r}: {exc!r}",
+                    file=sys.stderr,
+                )
+                return empty, f"Spotify search network error after retries: {exc!r}"
+            time.sleep(2**attempt)
+            continue
+        sc = r.status_code
+        if sc == 401:
+            raise SpotifyAuthError(
+                "Spotify API returned 401 Unauthorized — check SPOTIFY_CLIENT_ID and "
+                "SPOTIFY_CLIENT_SECRET in .env (client credentials must be valid)."
+            )
+        if sc == 400:
+            print(
+                f"[phase4b] Spotify 400 Bad Request search track_title={track_title!r} query={query!r}",
+                file=sys.stderr,
+            )
+            return empty, MSG_SPOTIFY_400
+        if sc == 429:
+            if attempt >= max_retries:
+                print(
+                    f"[phase4b] Spotify 429 rate limit after {max_retries} retries "
+                    f"track_title={track_title!r} query={query!r}",
+                    file=sys.stderr,
+                )
+                return empty, "Spotify search rate-limited (429) after retries"
+            wait = _retry_after_seconds(r)
+            time.sleep(wait)
+            continue
+        if 500 <= sc < 600:
+            if attempt >= max_retries:
+                print(
+                    f"[phase4b] Spotify {sc} after {max_retries} retries "
+                    f"track_title={track_title!r}",
+                    file=sys.stderr,
+                )
+                return empty, f"Spotify search server error {sc} after retries"
+            time.sleep(2**attempt)
+            continue
+        if sc == 200:
+            try:
+                return r.json(), None
+            except ValueError:
+                print(
+                    f"[phase4b] Spotify 200 but invalid JSON track_title={track_title!r}",
+                    file=sys.stderr,
+                )
+                return empty, "Spotify search returned invalid JSON"
+
+        print(
+            f"[phase4b] Spotify HTTP {sc} search track_title={track_title!r} query={query!r}",
+            file=sys.stderr,
+        )
+        return empty, f"Spotify search failed (HTTP {sc})"
+
+    return empty, "Spotify search exhausted retries"
 
 
 def _domain(url: str) -> str:
@@ -184,6 +297,18 @@ def album_critical_name(album_or_era: str) -> str:
     return raw
 
 
+def build_spotify_search_query(track_title: str, album_or_era: str) -> str:
+    """
+    Spotify search `q` grammar requires quoted strings for multi-token field values.
+    Unquoted `track:All Falls Down` → HTTP 400; use track:\"…\" artist:\"…\" instead.
+    """
+    tq = track_title.replace('"', '\\"')
+    hint = collab_album_search_hint(album_or_era)
+    if hint:
+        return f'track:"{tq}" {hint}'
+    return f'track:"{tq}" artist:"Kanye West"'
+
+
 def collab_album_search_hint(album_or_era: str) -> str | None:
     low = (album_or_era or "").lower()
     if "watch the throne" in low:
@@ -216,36 +341,55 @@ def artist_gate_ok(track: dict[str, Any], album_or_era: str) -> bool:
     return "kanye" in blob
 
 
-def spotify_search(token: str, query: str, *, limit: int = 15) -> dict[str, Any]:
-    spotify_throttle()
-    r = requests.get(
-        "https://api.spotify.com/v1/search",
-        headers={"Authorization": f"Bearer {token}"},
-        params={"q": query, "type": "track", "limit": limit},
-        timeout=60,
-    )
-    if r.status_code == 401:
-        raise RuntimeError("Spotify API returned 401 Unauthorized.")
-    r.raise_for_status()
-    return r.json()
-
-
 def spotify_tracks_batch(token: str, ids: list[str]) -> list[dict[str, Any] | None]:
+    """GET /v1/tracks in chunks of 50; 429/5xx retries; 401 raises SpotifyAuthError."""
     out: list[dict[str, Any] | None] = []
+    max_retries = 3
     for i in range(0, len(ids), 50):
         chunk = ids[i : i + 50]
-        spotify_throttle()
-        r = requests.get(
-            "https://api.spotify.com/v1/tracks",
-            headers={"Authorization": f"Bearer {token}"},
-            params={"ids": ",".join(chunk)},
-            timeout=60,
-        )
-        if r.status_code == 401:
-            raise RuntimeError("Spotify API returned 401 Unauthorized.")
-        r.raise_for_status()
-        tracks = (r.json() or {}).get("tracks") or []
-        out.extend(tracks)
+        for attempt in range(max_retries + 1):
+            spotify_throttle()
+            try:
+                r = requests.get(
+                    "https://api.spotify.com/v1/tracks",
+                    headers={"Authorization": f"Bearer {token}"},
+                    params={"ids": ",".join(chunk)},
+                    timeout=60,
+                )
+            except requests.exceptions.RequestException as exc:
+                if attempt >= max_retries:
+                    raise RuntimeError(
+                        f"Spotify /v1/tracks network error after retries: {exc!r}"
+                    ) from exc
+                time.sleep(2**attempt)
+                continue
+            sc = r.status_code
+            if sc == 401:
+                raise SpotifyAuthError(
+                    "Spotify API returned 401 Unauthorized while fetching /v1/tracks — "
+                    "check SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET."
+                )
+            if sc == 429:
+                if attempt >= max_retries:
+                    raise RuntimeError(
+                        "Spotify /v1/tracks rate-limited (429) after retries; "
+                        f"chunk starting {chunk[0]!r}"
+                    )
+                time.sleep(_retry_after_seconds(r, cap=60.0))
+                continue
+            if 500 <= sc < 600:
+                if attempt >= max_retries:
+                    raise RuntimeError(
+                        f"Spotify /v1/tracks server error {sc} after retries; "
+                        f"chunk starting {chunk[0]!r}"
+                    )
+                time.sleep(2**attempt)
+                continue
+            if sc != 200:
+                raise RuntimeError(f"Spotify /v1/tracks unexpected HTTP {sc}: {r.text[:300]!r}")
+            tracks = (r.json() or {}).get("tracks") or []
+            out.extend(tracks)
+            break
     return out
 
 
@@ -723,22 +867,25 @@ def main() -> int:
     low_conf: list[dict[str, Any]] = []
     match_scores: dict[str, float] = {}
     id_for_track: dict[str, str | None] = {}
+    search_fail_notes: dict[str, str] = {}
 
     for tid, frow in feats.items():
         title = frow["track_title"]
         cl = cleaned_by_id.get(tid, {})
         aoe = str(cl.get("album_or_era") or "")
-        hint = collab_album_search_hint(aoe)
-        if hint:
-            q = f"track:{title} {hint}"
-        else:
-            q = f"track:{title} artist:Kanye West"
+        q = build_spotify_search_query(title, aoe)
 
         try:
-            payload = spotify_search(token, q)
-        except RuntimeError as e:
+            payload, search_note = spotify_search(token, q, track_title=title)
+        except SpotifyAuthError as e:
             print(f"ERROR: {e}", file=sys.stderr)
             return 2
+
+        if search_note:
+            search_fail_notes[tid] = search_note
+            id_for_track[tid] = None
+            match_scores[tid] = 0.0
+            continue
 
         sid, score, matched_name = pick_best_spotify_match(title, aoe, payload)
         match_scores[tid] = score
@@ -764,7 +911,12 @@ def main() -> int:
     uniq_ids = sorted({i for i in id_for_track.values() if i})
     meta_by_id: dict[str, dict[str, Any]] = {}
     if uniq_ids:
-        for tid_meta, meta in zip(uniq_ids, spotify_tracks_batch(token, uniq_ids)):
+        try:
+            batch = spotify_tracks_batch(token, uniq_ids)
+        except SpotifyAuthError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 2
+        for tid_meta, meta in zip(uniq_ids, batch):
             if meta:
                 meta_by_id[tid_meta] = meta
 
@@ -785,6 +937,7 @@ def main() -> int:
         score = match_scores[tid]
 
         if sid is None or score < FUZZ_THRESHOLD:
+            pnote = search_fail_notes.get(tid) or f"spotify_fuzzy_below_{int(FUZZ_THRESHOLD)};score={score:.1f}"
             perf_rows.append(
                 {
                     "track_id": tid,
@@ -804,7 +957,7 @@ def main() -> int:
                     "riaa_certification": "",
                     "riaa_cert_date": "",
                     "fetch_timestamp": fetch_iso,
-                    "parser_note": f"spotify_fuzzy_below_{int(FUZZ_THRESHOLD)};score={score:.1f}",
+                    "parser_note": pnote,
                 }
             )
             continue
@@ -880,6 +1033,8 @@ def main() -> int:
 
     n_tracks = len(perf_rows)
     n_spotify = sum(1 for r in perf_rows if r["spotify_track_id"] != "not_on_spotify")
+    n_spotify_search_400 = sum(1 for n in search_fail_notes.values() if n == MSG_SPOTIFY_400)
+    n_spotify_search_other = len(search_fail_notes) - n_spotify_search_400
     n_kworb = sum(1 for r in perf_rows if str(r.get("kworb_total_streams", "")).strip() != "")
     n_bb = sum(1 for r in perf_rows if r.get("charted_hot100") == "True")
     n_riaa = sum(1 for r in perf_rows if str(r.get("riaa_certification", "")).strip() != "")
@@ -926,6 +1081,10 @@ def main() -> int:
         "",
         f"- Tracks: **{n_tracks}**",
         f"- Spotify matched (not `not_on_spotify`): **{n_spotify}** ({n_spotify / max(n_tracks,1):.1%})",
+        f"- Rows skipped after Spotify search HTTP 400: **{n_spotify_search_400}**",
+        f"- Rows skipped after other Spotify search failures: **{n_spotify_search_other}**",
+        "- Run `scripts/phase_4b_ghost_tracks.py` before integration to audit non-catalog rows "
+        "(`data/phase_4b_ghost_tracks.csv`).",
         f"- Kworb streams present: **{n_kworb}** ({n_kworb / max(n_tracks,1):.1%})",
         f"- Hot 100 charted (`charted_hot100=True`): **{n_bb}**",
         f"- Non-empty RIAA certification column: **{n_riaa}**",
