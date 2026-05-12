@@ -2,27 +2,27 @@
 """
 Phase 4b — Build data/kanye_track_performance.csv and data/kanye_track_sonic_derived.csv.
 
-Spotify: client-credentials only; GET /v1/search + GET /v1/tracks (NO /audio-features).
+Kworb: cumulative streams from Kanye West + ¥$ song tables; title-only fuzzy match
+(RapidFuzz token_set_ratio ≥ 88) against anchor titles.
 
-Kworb: cumulative streams from Kanye West + ¥$ song tables (Spotify IDs in anchors).
+Billboard Hot 100: Wikipedia «Kanye West singles discography» wikitables (US column).
 
-Billboard Hot 100 peak: Wikipedia «Kanye West singles discography» wikitables (US column).
+Optional enrichment: cached Wikipedia song articles for weeks, debut date, and infobox Length.
 
-Optional enrichment (weeks / debut date): cached Wikipedia song articles + regex.
-
-RIAA strings: parsed from Certifications column cells when present (singles-oriented tables).
+RIAA: parsed from Certifications column cells when present.
 
 Caching: /tmp/performance_cache/<sha256(url)>.
 
-Rate limits: Spotify ~5 req/s; kworb.net / wikipedia.org ≥2s between requests.
+Rate limits: kworb.net / wikipedia.org ≥ 2s between requests per registrable domain.
 
-Requires SPOTIFY_CLIENT_ID + SPOTIFY_CLIENT_SECRET in .env (never logged).
+No authenticated external APIs (Spotify removed).
 
-Low Spotify fuzzy match (<85 RapidFuzz token_set_ratio): exit code 2 unless
---accept-low-confidence (writes rows as not_on_spotify with parser_note).
+Kworb gate: if more than 20 tracks have best fuzzy score < 88 vs the merged Kworb list,
+the script exits 2 and prints JSON for review. Re-run with `--continue-after-kworb-review`
+after human review when many misses are expected (off-Kworb titles).
 
-Spotify /v1/search errors: HTTP 400 → skip row with parser_note (no crash); 429 / 5xx →
-retry (Retry-After / exponential backoff); HTTP 401 → hard fail (SpotifyAuthError).
+Wikipedia duration gate: when song-page enrichment is enabled, if fewer than 30 tracks
+receive a parsed infobox Length, exit 2 (parser likely broken).
 """
 from __future__ import annotations
 
@@ -31,7 +31,6 @@ import csv
 import hashlib
 import html as html_lib
 import json
-import os
 import re
 import sys
 import time
@@ -39,15 +38,13 @@ import unicodedata
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 from urllib.parse import unquote, urlparse
 
 import requests
 from bs4 import BeautifulSoup
 from bs4.element import Tag
-from dotenv import load_dotenv
 from rapidfuzz import fuzz
-from requests import Response
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FEATURES_CSV = PROJECT_ROOT / "data" / "kanye_track_features.csv"
@@ -55,9 +52,10 @@ CLEANED_CSV = PROJECT_ROOT / "data" / "kanye_cleaned.csv"
 OUT_PERF = PROJECT_ROOT / "data" / "kanye_track_performance.csv"
 OUT_SONIC = PROJECT_ROOT / "data" / "kanye_track_sonic_derived.csv"
 LOG_MD = PROJECT_ROOT / "data" / "phase_4b_log.md"
+OUT_TITLE_COLLISIONS = PROJECT_ROOT / "data" / "phase_4b_title_collisions.csv"
+OUT_KWORB_MISSES = PROJECT_ROOT / "data" / "phase_4b_kworb_misses.csv"
 
 CACHE_ROOT = Path("/tmp/performance_cache")
-TOKEN_CACHE = CACHE_ROOT / "spotify_token.json"
 
 UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
@@ -91,119 +89,12 @@ CRITICAL_ALBUM_SUBSTRINGS: list[tuple[str, tuple[str, ...]]] = [
     ("Bully", ("bully",)),
 ]
 
-FUZZ_THRESHOLD = 85.0
-SPOTIFY_GAP = 0.21
-
-_spotify_last = 0.0
-
-MSG_SPOTIFY_400 = (
-    "Spotify search returned 400 — query may have failed URL encoding or "
-    "contained unsupported characters"
-)
-
-
-class SpotifyAuthError(RuntimeError):
-    """Invalid or expired Spotify client credentials (HTTP 401)."""
-
-
-def _retry_after_seconds(resp: Response, *, cap: float = 30.0) -> float:
-    """Spotify may send large Retry-After during outages; cap avoids multi-hour bulk stalls."""
-    raw = (resp.headers.get("Retry-After") or "").strip()
-    if not raw:
-        return min(3.0, cap)
-    try:
-        return min(max(0.5, float(raw)), cap)
-    except ValueError:
-        return min(5.0, cap)
-
-
-def spotify_search(
-    token: str,
-    query: str,
-    *,
-    track_title: str,
-    limit: int = 15,
-) -> tuple[dict[str, Any], str | None]:
-    """
-    GET /v1/search (track). Returns (payload, parser_note).
-
-    parser_note is set when the search must be skipped for this row (HTTP 400,
-    exhausted 429/5xx retries, or other client errors). Caller writes not_on_spotify.
-
-    Raises SpotifyAuthError on HTTP 401 (credentials).
-    """
-    empty: dict[str, Any] = {"tracks": {"items": []}}
-    params = {"q": query, "type": "track", "limit": limit}
-    max_retries = 3  # after first failure → up to 4 attempts total
-
-    for attempt in range(max_retries + 1):
-        spotify_throttle()
-        try:
-            r = requests.get(
-                "https://api.spotify.com/v1/search",
-                headers={"Authorization": f"Bearer {token}"},
-                params=params,
-                timeout=60,
-            )
-        except requests.exceptions.RequestException as exc:
-            if attempt >= max_retries:
-                print(
-                    f"[phase4b] Spotify search network error track_title={track_title!r}: {exc!r}",
-                    file=sys.stderr,
-                )
-                return empty, f"Spotify search network error after retries: {exc!r}"
-            time.sleep(2**attempt)
-            continue
-        sc = r.status_code
-        if sc == 401:
-            raise SpotifyAuthError(
-                "Spotify API returned 401 Unauthorized — check SPOTIFY_CLIENT_ID and "
-                "SPOTIFY_CLIENT_SECRET in .env (client credentials must be valid)."
-            )
-        if sc == 400:
-            print(
-                f"[phase4b] Spotify 400 Bad Request search track_title={track_title!r} query={query!r}",
-                file=sys.stderr,
-            )
-            return empty, MSG_SPOTIFY_400
-        if sc == 429:
-            if attempt >= max_retries:
-                print(
-                    f"[phase4b] Spotify 429 rate limit after {max_retries} retries "
-                    f"track_title={track_title!r} query={query!r}",
-                    file=sys.stderr,
-                )
-                return empty, "Spotify search rate-limited (429) after retries"
-            wait = _retry_after_seconds(r)
-            time.sleep(wait)
-            continue
-        if 500 <= sc < 600:
-            if attempt >= max_retries:
-                print(
-                    f"[phase4b] Spotify {sc} after {max_retries} retries "
-                    f"track_title={track_title!r}",
-                    file=sys.stderr,
-                )
-                return empty, f"Spotify search server error {sc} after retries"
-            time.sleep(2**attempt)
-            continue
-        if sc == 200:
-            try:
-                return r.json(), None
-            except ValueError:
-                print(
-                    f"[phase4b] Spotify 200 but invalid JSON track_title={track_title!r}",
-                    file=sys.stderr,
-                )
-                return empty, "Spotify search returned invalid JSON"
-
-        print(
-            f"[phase4b] Spotify HTTP {sc} search track_title={track_title!r} query={query!r}",
-            file=sys.stderr,
-        )
-        return empty, f"Spotify search failed (HTTP {sc})"
-
-    return empty, "Spotify search exhausted retries"
+# Billboard / RIAA table fuzzy match (unchanged behavior).
+CHART_FUZZ_THRESHOLD = 85.0
+# Kworb title-only (no Spotify artist cross-check).
+KWORB_FUZZ_THRESHOLD = 88.0
+MIN_WIKI_DURATION_COVERAGE = 30
+MAX_KWORB_REVIEW_FAILS = 20
 
 
 def _domain(url: str) -> str:
@@ -228,58 +119,36 @@ def cached_get(url: str, min_interval: float = 2.0) -> str:
     return txt
 
 
-def spotify_throttle() -> None:
-    global _spotify_last
-    gap = SPOTIFY_GAP - (time.time() - _spotify_last)
-    if gap > 0:
-        time.sleep(gap)
-    _spotify_last = time.time()
-
-
-def load_spotify_token(client_id: str, client_secret: str) -> str:
-    now = time.time()
-    if TOKEN_CACHE.exists():
-        try:
-            meta = json.loads(TOKEN_CACHE.read_text(encoding="utf-8"))
-            exp = float(meta.get("expires_at", 0))
-            tok = (meta.get("access_token") or "").strip()
-            if tok and now < exp - 60:
-                return tok
-        except (json.JSONDecodeError, TypeError, ValueError):
-            pass
-    spotify_throttle()
-    r = requests.post(
-        "https://accounts.spotify.com/api/token",
-        data={"grant_type": "client_credentials"},
-        auth=(client_id, client_secret),
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        timeout=60,
-    )
-    if r.status_code != 200:
-        raise RuntimeError(
-            "Spotify token request failed "
-            f"HTTP {r.status_code}: {r.text[:500]!r} "
-            "(check SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET in .env)"
-        )
-    payload = r.json()
-    tok = payload["access_token"]
-    ttl = int(payload.get("expires_in", 3600))
-    TOKEN_CACHE.parent.mkdir(parents=True, exist_ok=True)
-    TOKEN_CACHE.write_text(
-        json.dumps({"access_token": tok, "expires_at": now + ttl}),
-        encoding="utf-8",
-    )
-    return tok
-
-
 def normalize_title(s: str) -> str:
     s = html_lib.unescape(s or "")
     s = unicodedata.normalize("NFKC", s)
+    s = s.replace("\u2019", "'").replace("\u2018", "'").replace("\u2032", "'")
     s = s.strip().strip('"“”«»').lower()
     s = re.sub(r"\s+", " ", s)
     s = re.sub(r"\(.*?\)", "", s).strip()
     s = re.sub(r"\[.*?\]", "", s).strip()
     return s
+
+
+def norm_from_wiki_slug(slug: Optional[str]) -> str:
+    """Lowercase slug text with parentheses kept (disambiguates «Number One» rows)."""
+    if not slug:
+        return ""
+    s = unquote(slug.split("#")[0])
+    s = s.replace("_", " ")
+    s = html_lib.unescape(s)
+    s = unicodedata.normalize("NFKC", s).lower()
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def chart_row_uid(row: dict[str, Any]) -> str:
+    """Stable id for a Wikipedia singles row (slug when present)."""
+    ws = (row.get("wiki_slug") or "").strip()
+    if ws:
+        return ws
+    norm = row.get("norm") or ""
+    ry = row.get("release_year")
+    return f"{norm}##{ry if ry is not None else 'none'}"
 
 
 def album_critical_name(album_or_era: str) -> str:
@@ -297,139 +166,13 @@ def album_critical_name(album_or_era: str) -> str:
     return raw
 
 
-def build_spotify_search_query(track_title: str, album_or_era: str) -> str:
-    """
-    Spotify search `q` grammar requires quoted strings for multi-token field values.
-    Unquoted `track:All Falls Down` → HTTP 400; use track:\"…\" artist:\"…\" instead.
-    """
-    tq = track_title.replace('"', '\\"')
-    hint = collab_album_search_hint(album_or_era)
-    if hint:
-        return f'track:"{tq}" {hint}'
-    return f'track:"{tq}" artist:"Kanye West"'
-
-
-def collab_album_search_hint(album_or_era: str) -> str | None:
-    low = (album_or_era or "").lower()
-    if "watch the throne" in low:
-        return "Kanye West JAY-Z"
-    if "kids see ghosts" in low:
-        return "Kanye West Kid Cudi"
-    if "vultures" in low or "\u00a5" in (album_or_era or ""):
-        return "\u00a5$"
-    return None
-
-
-def artists_blob(track: dict[str, Any]) -> str:
-    parts: list[str] = []
-    for a in track.get("artists") or []:
-        nm = (a.get("name") or "").lower()
-        if nm:
-            parts.append(nm)
-    return " ".join(parts)
-
-
-def artist_gate_ok(track: dict[str, Any], album_or_era: str) -> bool:
-    blob = artists_blob(track)
-    low = (album_or_era or "").lower()
-    if "watch the throne" in low:
-        return "kanye" in blob and ("jay-z" in blob or "jay z" in blob)
-    if "kids see ghosts" in low:
-        return "cudi" in blob and "kanye" in blob
-    if "vultures" in low or "\u00a5" in (album_or_era or ""):
-        return ("\u00a5" in blob) or ("ty dolla" in blob) or ("kanye" in blob)
-    return "kanye" in blob
-
-
-def spotify_tracks_batch(token: str, ids: list[str]) -> list[dict[str, Any] | None]:
-    """GET /v1/tracks in chunks of 50; 429/5xx retries; 401 raises SpotifyAuthError."""
-    out: list[dict[str, Any] | None] = []
-    max_retries = 3
-    for i in range(0, len(ids), 50):
-        chunk = ids[i : i + 50]
-        for attempt in range(max_retries + 1):
-            spotify_throttle()
-            try:
-                r = requests.get(
-                    "https://api.spotify.com/v1/tracks",
-                    headers={"Authorization": f"Bearer {token}"},
-                    params={"ids": ",".join(chunk)},
-                    timeout=60,
-                )
-            except requests.exceptions.RequestException as exc:
-                if attempt >= max_retries:
-                    raise RuntimeError(
-                        f"Spotify /v1/tracks network error after retries: {exc!r}"
-                    ) from exc
-                time.sleep(2**attempt)
-                continue
-            sc = r.status_code
-            if sc == 401:
-                raise SpotifyAuthError(
-                    "Spotify API returned 401 Unauthorized while fetching /v1/tracks — "
-                    "check SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET."
-                )
-            if sc == 429:
-                if attempt >= max_retries:
-                    raise RuntimeError(
-                        "Spotify /v1/tracks rate-limited (429) after retries; "
-                        f"chunk starting {chunk[0]!r}"
-                    )
-                time.sleep(_retry_after_seconds(r, cap=60.0))
-                continue
-            if 500 <= sc < 600:
-                if attempt >= max_retries:
-                    raise RuntimeError(
-                        f"Spotify /v1/tracks server error {sc} after retries; "
-                        f"chunk starting {chunk[0]!r}"
-                    )
-                time.sleep(2**attempt)
-                continue
-            if sc != 200:
-                raise RuntimeError(f"Spotify /v1/tracks unexpected HTTP {sc}: {r.text[:300]!r}")
-            tracks = (r.json() or {}).get("tracks") or []
-            out.extend(tracks)
-            break
-    return out
-
-
-def pick_best_spotify_match(
-    local_title: str,
-    album_or_era: str,
-    search_payload: dict[str, Any],
-) -> tuple[str | None, float, str | None]:
-    items = ((search_payload.get("tracks") or {}).get("items")) or []
-    best_id: str | None = None
-    best_score = -1.0
-    best_name: str | None = None
-    nt = normalize_title(local_title)
-    for it in items:
-        if not it or not it.get("id"):
-            continue
-        name = it.get("name") or ""
-        if not artist_gate_ok(it, album_or_era):
-            continue
-        score = float(fuzz.token_set_ratio(nt, normalize_title(name)))
-        if score > best_score:
-            best_score = score
-            best_id = it["id"]
-            best_name = name
-    return best_id, best_score, best_name
-
-
-def parse_kworb_songs_html(html: str) -> tuple[dict[str, int], dict[str, str], str | None]:
-    """sid -> streams, sid -> anchor title, last-updated ISO date."""
+def parse_kworb_songs_html(html: str) -> tuple[list[tuple[str, int]], str | None]:
+    """(title, streams) per table row; last-updated ISO date from page header."""
     soup = BeautifulSoup(html, "lxml")
     m = re.search(r"Last updated:\s*(\d{4}/\d{2}/\d{2})", html)
     lu = m.group(1).replace("/", "-") if m else None
-    streams: dict[str, int] = {}
-    titles: dict[str, str] = {}
+    rows_out: list[tuple[str, int]] = []
     for a in soup.select('td.text a[href*="open.spotify.com/track/"]'):
-        href = a.get("href") or ""
-        m2 = re.search(r"/track/([A-Za-z0-9]+)", href)
-        if not m2:
-            continue
-        sid = m2.group(1)
         row = a.find_parent("tr")
         if not row:
             continue
@@ -437,29 +180,82 @@ def parse_kworb_songs_html(html: str) -> tuple[dict[str, int], dict[str, str], s
         if len(tds) < 2:
             continue
         raw = tds[1].get_text(strip=True).replace(",", "")
-        if raw.isdigit():
-            streams[sid] = int(raw)
-            titles[sid] = re.sub(r"\s+", " ", a.get_text(" ", strip=True)).strip()
-    return streams, titles, lu
+        if not raw.isdigit():
+            continue
+        title = re.sub(r"\s+", " ", a.get_text(" ", strip=True)).strip()
+        if title:
+            rows_out.append((title, int(raw)))
+    return rows_out, lu
 
 
-def merge_kworb() -> tuple[dict[str, int], dict[str, str], str | None]:
-    merged_s: dict[str, int] = {}
-    merged_t: dict[str, str] = {}
+def merge_kworb() -> tuple[list[tuple[str, int]], str | None]:
+    merged: list[tuple[str, int]] = []
     dates: list[str] = []
     for url in KWORB_PAGES:
         html = cached_get(url, min_interval=2.0)
-        part_s, part_t, lu = parse_kworb_songs_html(html)
-        merged_s.update(part_s)
-        merged_t.update(part_t)
+        part, lu = parse_kworb_songs_html(html)
+        merged.extend(part)
         if lu:
             dates.append(lu)
-    return merged_s, merged_t, max(dates) if dates else None
+    return merged, max(dates) if dates else None
 
 
-def strip_title_from_row_th(th: Tag) -> tuple[str, str | None]:
+def repair_mojibake(s: str) -> str:
+    """Kworb anchor text sometimes carries UTF-8 decoded as Latin-1 (e.g. MAMAâ\x80\x99S)."""
+    if not s or ("â" not in s and "Ã" not in s):
+        return s
+    try:
+        return s.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return s
+
+
+def kworb_fuzz_score(nt: str, kw_title: str) -> float:
+    """
+    token_set_ratio on normalized titles, plus a path that strips Spotify-style
+    censorship asterisks so local «Niggas in Paris» can align with «Ni**as In Paris».
+    """
+    kwn = normalize_title(repair_mojibake(kw_title.strip()))
+    s1 = float(fuzz.token_set_ratio(nt, kwn))
+    s2 = float(
+        fuzz.token_set_ratio(
+            nt.replace("*", ""),
+            kwn.replace("*", ""),
+        )
+    )
+    return max(s1, s2)
+
+
+def best_kworb_match(
+    track_title: str, kworb_rows: list[tuple[str, int]]
+) -> tuple[int | None, float, str | None]:
+    """
+    Returns (streams, best_score, best_kworb_title).
+    Caller applies KWORB_FUZZ_THRESHOLD to decide whether streams is usable.
+    On score ties, prefers higher stream counts.
+    """
+    nt = normalize_title(track_title)
+    best_score = -1.0
+    best_streams: int | None = None
+    best_title: str | None = None
+    for kw_title, streams in kworb_rows:
+        sc = kworb_fuzz_score(nt, kw_title)
+        if sc > best_score:
+            best_score = sc
+            best_streams = streams
+            best_title = kw_title
+        elif sc == best_score and best_streams is not None and streams > best_streams:
+            best_streams = streams
+            best_title = kw_title
+    if best_score < 0:
+        return None, 0.0, None
+    return best_streams, best_score, best_title
+
+
+def strip_title_from_row_th(th: Tag) -> tuple[str, str | None, str | None]:
     wiki = None
     song_link = None
+    wiki_display_title: str | None = None
     for a in th.find_all("a", href=True):
         href = a.get("href") or ""
         if "/wiki/" not in href or "/wiki/File:" in href:
@@ -471,6 +267,7 @@ def strip_title_from_row_th(th: Tag) -> tuple[str, str | None]:
             continue
         song_link = a
         wiki = slug.replace("_", " ")
+        wiki_display_title = (a.get("title") or "").strip() or None
         break
 
     if song_link is not None:
@@ -478,7 +275,7 @@ def strip_title_from_row_th(th: Tag) -> tuple[str, str | None]:
     else:
         txt = th.get_text(" ", strip=True)
     txt = re.sub(r'^["“]+|["”]+$', "", txt).strip()
-    return txt, wiki
+    return txt, wiki, wiki_display_title
 
 
 def parse_peak_cell(text: str) -> int | None:
@@ -491,12 +288,6 @@ def parse_peak_cell(text: str) -> int | None:
     return int(m.group(1))
 
 
-def row_has_year_column(tds: list) -> bool:
-    if not tds:
-        return False
-    return bool(re.fullmatch(r"\d{4}", tds[0].get_text(strip=True)))
-
-
 def find_riaa_cell(tds: list[Any]) -> Any | None:
     for td in tds:
         txt = td.get_text(" ", strip=True)
@@ -506,9 +297,14 @@ def find_riaa_cell(tds: list[Any]) -> Any | None:
 
 
 def parse_wikipedia_singles_discography(html: str) -> tuple[list[dict[str, Any]], list[str]]:
+    """
+    Parse singles wikitables. Carries `release_year` from a leading 4-digit year cell
+    (including rowspan) so continuation rows (e.g. 2016 «Champions») inherit the year
+    from «Famous»'s rowspan cell.
+    """
     soup = BeautifulSoup(html, "lxml")
     rows_out: list[dict[str, Any]] = []
-    peaks_by_norm: dict[str, list[int]] = defaultdict(list)
+    peaks_by_uid: dict[str, list[int]] = defaultdict(list)
     ambiguities: list[str] = []
 
     for table in soup.select("table.wikitable"):
@@ -529,41 +325,54 @@ def parse_wikipedia_singles_discography(html: str) -> tuple[list[dict[str, Any]]
         if hot_idx is None:
             continue
 
+        active_year: int | None = None
         for tr in table.find_all("tr"):
             th = tr.find("th", attrs={"scope": "row"})
             if not th:
                 continue
-            title, wiki_slug = strip_title_from_row_th(th)
+            title, wiki_slug, wiki_display_title = strip_title_from_row_th(th)
             if not title:
                 continue
-            tds = tr.find_all("td")
+            tds = tr.find_all("td", recursive=False)
             if not tds:
                 continue
-            offset = 1 if row_has_year_column(tds) else 0
+            offset = 0
+            release_year: int | None = active_year
+            first_txt = tds[0].get_text(strip=True)
+            if re.fullmatch(r"\d{4}", first_txt):
+                active_year = int(first_txt)
+                release_year = active_year
+                offset = 1
             pi = offset + hot_idx
             if pi >= len(tds):
                 continue
             peak = parse_peak_cell(tds[pi].get_text(" ", strip=True))
-            cert_td = find_riaa_cell(tds)
+            all_tds = tr.find_all("td")
+            cert_td = find_riaa_cell(all_tds)
             riaa_blob = cert_td.get_text(" ", strip=True) if cert_td else ""
 
             norm = normalize_title(title)
-            rows_out.append(
-                {
-                    "title": title,
-                    "norm": norm,
-                    "peak": peak,
-                    "wiki_slug": wiki_slug,
-                    "riaa_blob": riaa_blob,
-                }
-            )
+            norm_slug = norm_from_wiki_slug(wiki_slug) if wiki_slug else norm
+            crow = {
+                "title": title,
+                "norm": norm,
+                "norm_slug": norm_slug,
+                "peak": peak,
+                "wiki_slug": wiki_slug,
+                "wiki_display_title": wiki_display_title,
+                "release_year": release_year,
+                "riaa_blob": riaa_blob,
+            }
+            rows_out.append(crow)
             if peak is not None:
-                peaks_by_norm[norm].append(peak)
+                peaks_by_uid[chart_row_uid(crow)].append(peak)
 
-    for norm, plist in peaks_by_norm.items():
+    for uid, plist in peaks_by_uid.items():
         u = sorted(set(plist))
         if len(u) > 1:
-            ambiguities.append(f'Multiple distinct Hot 100 peaks for title variant {norm!r}: {u}')
+            ambiguities.append(
+                f"Multiple distinct Hot 100 peaks for chart row {uid!r}: {u}"
+            )
 
     return rows_out, ambiguities
 
@@ -616,25 +425,73 @@ def extract_hot100_extras_from_wiki_html(html: str) -> tuple[int | None, str | N
     return weeks, debut
 
 
+def parse_length_to_seconds(text: str) -> int | None:
+    """Infobox Length cell: '3:42', '3 : 41 (album version)', '3 minutes 42 seconds', etc."""
+    if not text:
+        return None
+    t = re.sub(r"\[[^\]]*\]", "", text)
+    # First timed segment only when multiple versions (e.g. album vs single).
+    t = t.split("(")[0].strip()
+
+    m = re.search(
+        r"(\d+)\s*minutes?\s*(?:and\s*)?(\d+)\s*seconds?",
+        t,
+        re.I,
+    )
+    if m:
+        return int(m.group(1)) * 60 + int(m.group(2))
+
+    # Allow spaces around ':' (MediaWiki duration spans: "3 : 41").
+    m = re.search(r"\b(\d{1,3})\s*:\s*(\d{2})\b", t)
+    if m:
+        mins, secs = int(m.group(1)), int(m.group(2))
+        if mins < 60 and secs < 60:
+            return mins * 60 + secs
+    return None
+
+
+def extract_length_seconds_from_wiki_html(html: str) -> int | None:
+    soup = BeautifulSoup(html, "lxml")
+    infobox = soup.select_one("table.infobox") or soup.find(
+        "table", class_=lambda c: c and "infobox" in " ".join(c).lower()
+    )
+    if not infobox:
+        return None
+    for tr in infobox.find_all("tr"):
+        th = tr.find("th")
+        td = tr.find("td")
+        if not th or not td:
+            continue
+        lab = th.get_text(" ", strip=True).lower()
+        if "length" not in lab and lab not in ("duration", "running time"):
+            continue
+        return parse_length_to_seconds(td.get_text(" ", strip=True))
+    return None
+
+
+ChartRowId = str
+
+
 def build_chart_lookup(
     html: str,
     *,
     enrich_wiki: bool,
-) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]], list[str]]:
+) -> tuple[list[dict[str, Any]], dict[ChartRowId, dict[str, Any]], list[str]]:
     chart_rows, ambiguities = parse_wikipedia_singles_discography(html)
 
-    best_by_norm: dict[str, dict[str, Any]] = {}
+    best_by_uid: dict[ChartRowId, dict[str, Any]] = {}
     for row in chart_rows:
         if row["peak"] is None:
             continue
-        prev = best_by_norm.get(row["norm"])
+        uid = chart_row_uid(row)
+        prev = best_by_uid.get(uid)
         if prev is None or row["peak"] < prev["peak"]:
-            best_by_norm[row["norm"]] = row
+            best_by_uid[uid] = row
 
-    extras_by_norm: dict[str, dict[str, Any]] = {}
+    extras_by_uid: dict[ChartRowId, dict[str, Any]] = {}
     if enrich_wiki:
         fetched_slugs = 0
-        for norm, row in best_by_norm.items():
+        for uid, row in best_by_uid.items():
             slug = row.get("wiki_slug")
             if not slug or fetched_slugs > 220:
                 continue
@@ -642,17 +499,23 @@ def build_chart_lookup(
             whtml = cached_get(wiki_url, min_interval=2.0)
             fetched_slugs += 1
             wk, db = extract_hot100_extras_from_wiki_html(whtml)
-            extras_by_norm[norm] = {"weeks": wk, "debut_date": db}
+            dur = extract_length_seconds_from_wiki_html(whtml)
+            extras_by_uid[uid] = {
+                "weeks": wk,
+                "debut_date": db,
+                "duration_seconds": dur,
+            }
 
-    lookup: dict[str, dict[str, Any]] = {}
-    for norm, row in best_by_norm.items():
-        ex = extras_by_norm.get(norm, {})
+    lookup: dict[ChartRowId, dict[str, Any]] = {}
+    for uid, row in best_by_uid.items():
+        ex = extras_by_uid.get(uid, {})
         blob = row.get("riaa_blob") or ""
         cert, cdate = parse_riaa_cert(blob)
-        lookup[norm] = {
+        lookup[uid] = {
             "peak": row["peak"],
             "weeks": ex.get("weeks"),
             "debut_date": ex.get("debut_date"),
+            "duration_seconds": ex.get("duration_seconds"),
             "riaa_certification": cert,
             "riaa_cert_date": cdate,
             "riaa_blob": blob,
@@ -661,14 +524,45 @@ def build_chart_lookup(
     return chart_rows, lookup, ambiguities
 
 
+def find_attribution_era(
+    title: str, chart_year: int, exclude_tid: str, feats: dict[str, dict[str, Any]]
+) -> str | None:
+    """Other corpus row with same display title whose year is closest to Wikipedia chart year."""
+    best_era: str | None = None
+    best_delta = 10**9
+    for tid2, f2 in feats.items():
+        if tid2 == exclude_tid or (f2.get("track_title") or "").strip() != title.strip():
+            continue
+        try:
+            y2 = int(float(f2.get("year") or 0))
+        except (TypeError, ValueError):
+            continue
+        d = abs(y2 - chart_year)
+        if d < best_delta:
+            best_delta = d
+            best_era = (f2.get("era_clean") or "").strip() or None
+    return best_era
+
+
+def is_corpus_kanye_primary(pa_n: str) -> bool:
+    """Primary artist column is Kanye on solo cuts (skip slug-artist gate for those)."""
+    s = pa_n.replace(" ", "").lower()
+    return "kanyewest" in s or pa_n.strip().lower() in ("kanye", "ye", "")
+
+
 def match_chart_row(
     track_title: str,
     chart_rows: list[dict[str, Any]],
     *,
     require_peak: bool,
     require_riaa: bool = False,
+    track_release_year: int | None = None,
+    ignore_release_year: bool = False,
+    corpus_primary: str = "",
+    strict_year_match: bool = False,
 ) -> dict[str, Any] | None:
     nt = normalize_title(track_title)
+    pa_n = normalize_title((corpus_primary or "").strip())
     rows = chart_rows
     if require_peak:
         rows = [r for r in rows if r["peak"] is not None]
@@ -677,11 +571,36 @@ def match_chart_row(
     best = None
     best_score = -1.0
     for row in rows:
-        score = float(fuzz.token_set_ratio(nt, row["norm"]))
+        cry = row.get("release_year")
+        weak_slug = "(song)" in ((row.get("wiki_slug") or "").lower())
+        if not ignore_release_year and track_release_year is not None and cry is not None:
+            if strict_year_match:
+                if weak_slug:
+                    if int(cry) != int(track_release_year):
+                        continue
+                elif abs(int(cry) - int(track_release_year)) > 1:
+                    continue
+            elif abs(int(cry) - int(track_release_year)) > 2:
+                continue
+
+        slug_n = row.get("norm_slug") or row["norm"]
+        s_title = float(fuzz.token_set_ratio(nt, slug_n))
+        if s_title < CHART_FUZZ_THRESHOLD:
+            continue
+        if pa_n:
+            s_art = max(
+                float(fuzz.token_set_ratio(pa_n, slug_n)),
+                float(fuzz.partial_ratio(pa_n, slug_n)),
+            )
+        else:
+            s_art = 0.0
+        if pa_n and not is_corpus_kanye_primary(pa_n) and s_art < 55 and not weak_slug:
+            continue
+        score = s_title + 0.0001 * s_art
         if score > best_score:
             best_score = score
             best = row
-    if best is None or best_score < FUZZ_THRESHOLD:
+    if best is None or best_score < CHART_FUZZ_THRESHOLD:
         return None
     return best
 
@@ -729,11 +648,11 @@ def write_sonic_csv(
         n_lines = int(float(ft.get("n_lines") or 0))
         n_verses = int(float(ft.get("n_verses") or 0))
 
-        dm = prow.get("spotify_duration_ms")
+        ds_raw = prow.get("duration_seconds")
         dur_s: float | None = None
-        if dm not in ("", None):
+        if ds_raw not in ("", None):
             try:
-                dur_s = round(float(dm) / 1000.0, 4)
+                dur_s = float(int(str(ds_raw).strip()))
             except (TypeError, ValueError):
                 dur_s = None
 
@@ -786,13 +705,12 @@ def fmt_perf_preview(rows: list[dict[str, Any]], limit: int = 20) -> str:
         "track_id",
         "track_title",
         "album",
-        "spotify_track_id",
-        "spotify_popularity",
-        "spotify_duration_ms",
         "kworb_total_streams",
+        "kworb_match_score",
         "billboard_hot100_peak",
         "billboard_hot100_weeks_on_chart",
         "charted_hot100",
+        "duration_seconds",
         "parser_note",
     ]
     lines = ["=== First {} rows (selected columns) ===".format(min(limit, len(rows)))]
@@ -817,26 +735,120 @@ def null_stats(rows: list[dict[str, Any]], cols: list[str]) -> dict[str, int]:
     return out
 
 
+PERF_FIELDNAMES = [
+    "track_id",
+    "track_title",
+    "album",
+    "kworb_total_streams",
+    "kworb_match_score",
+    "kworb_fetch_date",
+    "billboard_hot100_peak",
+    "billboard_hot100_weeks_on_chart",
+    "billboard_hot100_debut_date",
+    "charted_hot100",
+    "riaa_certification",
+    "riaa_cert_date",
+    "duration_seconds",
+    "fetch_timestamp",
+    "parser_note",
+]
+
+
+def _merge_parser_note(existing: str, new: str) -> str:
+    e = (existing or "").strip()
+    if not new:
+        return e
+    if not e:
+        return new
+    if new in e:
+        return e
+    return f"{e}; {new}"
+
+
+MANUAL_KWORB_NOTE = (
+    "Manual confirmation of kworb match below fuzzy threshold; verified by lyric content review."
+)
+
+
+def apply_final_phase4b_corrections(
+    perf_rows: list[dict[str, Any]],
+    *,
+    kworb_date: str,
+) -> None:
+    """Human-verified fixes after automated fuzzy merge (Phase 4b final)."""
+    by_id = {r["track_id"]: r for r in perf_rows}
+
+    tid_bully = "king_bully_build_up_cuck_iapw_controversy"
+    if tid_bully in by_id:
+        r = by_id[tid_bully]
+        r["kworb_total_streams"] = ""
+        r["kworb_match_score"] = ""
+        r["kworb_fetch_date"] = ""
+        note = (
+            "Kworb match was attributed to Vultures 1 'King' (track from 2024); "
+            "Bully-era 'King' is a different track and has no distinct kworb entry as of fetch date."
+        )
+        r["parser_note"] = _merge_parser_note(r.get("parser_note", ""), note)
+
+    tid_college_no = "number_one_the_college_dropout"
+    if tid_college_no in by_id:
+        r = by_id[tid_college_no]
+        r["billboard_hot100_peak"] = ""
+        r["billboard_hot100_weeks_on_chart"] = ""
+        r["billboard_hot100_debut_date"] = ""
+        r["charted_hot100"] = "False"
+        note = (
+            "Chart data for 'Number One' attaches to Pharrell feat. Kanye 2006 release; "
+            "captured on Late Registration corpus row, not this College Dropout album track."
+        )
+        r["parser_note"] = _merge_parser_note(r.get("parser_note", ""), note)
+
+    tid_yee_san = "sanctified_yeezus"
+    if tid_yee_san in by_id:
+        r = by_id[tid_yee_san]
+        r["billboard_hot100_peak"] = ""
+        r["billboard_hot100_weeks_on_chart"] = ""
+        r["billboard_hot100_debut_date"] = ""
+        r["charted_hot100"] = "False"
+        r["duration_seconds"] = ""
+        r["parser_note"] = (
+            "Chart data for 'Sanctified' attaches to Rick Ross feat. Kanye 2014 release; "
+            "captured on Life of Pablo corpus row, not this Yeezus session track."
+        )
+
+    manual_kworb: dict[str, tuple[str, str]] = {
+        "buy_you_a_drank_remix_graduation": (
+            "9594701",
+            "Buy U A Drank (Shawty Snappin') (feat. Kanye West) - Remix",
+        ),
+        "i_don_t_like_remix_cruel_summer_yeezus_build_up": ("289690852", "Don't Like.1"),
+    }
+    for tid, (streams, _kw_title) in manual_kworb.items():
+        if tid not in by_id:
+            continue
+        r = by_id[tid]
+        r["kworb_total_streams"] = streams
+        r["kworb_match_score"] = "100.00"
+        r["kworb_fetch_date"] = kworb_date
+        r["parser_note"] = MANUAL_KWORB_NOTE
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--accept-low-confidence",
-        action="store_true",
-        help="Continue when Spotify fuzzy score < 85 (rows marked not_on_spotify).",
-    )
-    parser.add_argument(
         "--skip-wiki-enrich",
         action="store_true",
-        help="Do not fetch song articles for weeks/debut (peak-only).",
+        help="Do not fetch song articles (no weeks/debut/duration from Wikipedia song pages).",
+    )
+    parser.add_argument(
+        "--continue-after-kworb-review",
+        action="store_true",
+        help=(
+            "Complete the run even when more than 20 tracks have best Kworb score < "
+            f"{KWORB_FUZZ_THRESHOLD:g} (default: exit 2 with JSON). Use after reviewing the list."
+        ),
     )
     args = parser.parse_args()
-
-    load_dotenv(PROJECT_ROOT / ".env")
-    client_id = (os.getenv("SPOTIFY_CLIENT_ID") or "").strip().strip('"').strip("'")
-    client_secret = (os.getenv("SPOTIFY_CLIENT_SECRET") or "").strip().strip('"').strip("'")
-    if not client_id or not client_secret:
-        print("ERROR: Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in .env", file=sys.stderr)
-        return 2
 
     fetch_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -856,136 +868,117 @@ def main() -> int:
         enrich_wiki=not args.skip_wiki_enrich,
     )
 
-    kworb_streams, kworb_titles, kworb_date = merge_kworb()
+    kworb_rows, kworb_date = merge_kworb()
 
-    try:
-        token = load_spotify_token(client_id, client_secret)
-    except RuntimeError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
-        return 2
-
-    low_conf: list[dict[str, Any]] = []
-    match_scores: dict[str, float] = {}
-    id_for_track: dict[str, str | None] = {}
-    search_fail_notes: dict[str, str] = {}
-
+    kworb_review: list[dict[str, Any]] = []
     for tid, frow in feats.items():
         title = frow["track_title"]
-        cl = cleaned_by_id.get(tid, {})
-        aoe = str(cl.get("album_or_era") or "")
-        q = build_spotify_search_query(title, aoe)
-
-        try:
-            payload, search_note = spotify_search(token, q, track_title=title)
-        except SpotifyAuthError as e:
-            print(f"ERROR: {e}", file=sys.stderr)
-            return 2
-
-        if search_note:
-            search_fail_notes[tid] = search_note
-            id_for_track[tid] = None
-            match_scores[tid] = 0.0
-            continue
-
-        sid, score, matched_name = pick_best_spotify_match(title, aoe, payload)
-        match_scores[tid] = score
-        if sid is None or score < FUZZ_THRESHOLD:
-            low_conf.append(
+        _streams, score, kw_title = best_kworb_match(title, kworb_rows)
+        if score < KWORB_FUZZ_THRESHOLD:
+            kworb_review.append(
                 {
                     "track_id": tid,
                     "track_title": title,
-                    "best_score": score,
-                    "matched_spotify_title": matched_name,
-                    "query": q,
+                    "best_score": round(score, 2),
+                    "best_kworb_title": kw_title,
                 }
             )
-            id_for_track[tid] = None
-            continue
-        id_for_track[tid] = sid
 
-    if low_conf and not args.accept_low_confidence:
-        print("STOP: Spotify fuzzy match below 0.85 for one or more tracks.", file=sys.stderr)
-        print(json.dumps(low_conf, indent=2), file=sys.stderr)
+    if len(kworb_review) > MAX_KWORB_REVIEW_FAILS and not args.continue_after_kworb_review:
+        print(
+            f"STOP: {len(kworb_review)} tracks have best Kworb fuzzy score < {KWORB_FUZZ_THRESHOLD:g} "
+            f"(limit {MAX_KWORB_REVIEW_FAILS} before stop-and-ask). "
+            "Re-run with --continue-after-kworb-review after human review.",
+            file=sys.stderr,
+        )
+        print(json.dumps(kworb_review, indent=2), file=sys.stderr)
         return 2
 
-    uniq_ids = sorted({i for i in id_for_track.values() if i})
-    meta_by_id: dict[str, dict[str, Any]] = {}
-    if uniq_ids:
-        try:
-            batch = spotify_tracks_batch(token, uniq_ids)
-        except SpotifyAuthError as e:
-            print(f"ERROR: {e}", file=sys.stderr)
-            return 2
-        for tid_meta, meta in zip(uniq_ids, batch):
-            if meta:
-                meta_by_id[tid_meta] = meta
-
-    our_ids = {i for i in id_for_track.values() if i}
-    kworb_orphans: list[tuple[str, str]] = []
-    for sid in kworb_streams:
-        if sid not in our_ids:
-            kworb_orphans.append((sid, kworb_titles.get(sid, "?")))
+    by_title_eras: dict[str, set[str]] = defaultdict(set)
+    for f in feats.values():
+        by_title_eras[f["track_title"]].add((f.get("era_clean") or "").strip())
+    multi_era_titles = {t for t, es in by_title_eras.items() if len(es) >= 2}
 
     perf_rows: list[dict[str, Any]] = []
+    kworb_miss_rows: list[dict[str, str]] = []
+
     for tid, frow in feats.items():
         title = frow["track_title"]
         cl = cleaned_by_id.get(tid, {})
         aoe = str(cl.get("album_or_era") or "")
         album_disp = album_critical_name(aoe)
 
-        sid = id_for_track.get(tid)
-        score = match_scores[tid]
+        try:
+            track_year = int(float(frow.get("year") or ""))
+        except (TypeError, ValueError):
+            track_year = None
 
-        if sid is None or score < FUZZ_THRESHOLD:
-            pnote = search_fail_notes.get(tid) or f"spotify_fuzzy_below_{int(FUZZ_THRESHOLD)};score={score:.1f}"
-            perf_rows.append(
+        streams, k_score, kw_title = best_kworb_match(title, kworb_rows)
+        if k_score >= KWORB_FUZZ_THRESHOLD and streams is not None:
+            kw_streams_s = str(streams)
+            kw_score_s = f"{k_score:.2f}"
+            kw_date_s = kworb_date or ""
+            kw_note = ""
+        else:
+            kw_streams_s = ""
+            kw_score_s = ""
+            kw_date_s = ""
+            kw_note = f"no_kworb_match;best_kworb_title={kw_title!r};best_score={k_score:.2f}"
+            kworb_miss_rows.append(
                 {
                     "track_id": tid,
                     "track_title": title,
-                    "album": album_disp,
-                    "spotify_track_id": "not_on_spotify",
-                    "spotify_popularity": "",
-                    "spotify_duration_ms": "",
-                    "spotify_explicit": "",
-                    "spotify_isrc": "",
-                    "kworb_total_streams": "",
-                    "kworb_fetch_date": "",
-                    "billboard_hot100_peak": "",
-                    "billboard_hot100_weeks_on_chart": "",
-                    "billboard_hot100_debut_date": "",
-                    "charted_hot100": "False",
-                    "riaa_certification": "",
-                    "riaa_cert_date": "",
-                    "fetch_timestamp": fetch_iso,
-                    "parser_note": pnote,
+                    "era_clean": (frow.get("era_clean") or "").strip(),
+                    "year": (frow.get("year") or "").strip(),
+                    "best_kworb_match": kw_title or "",
+                    "best_kworb_score": f"{k_score:.2f}",
                 }
             )
-            continue
 
-        meta = meta_by_id.get(sid, {})
-        pops = meta.get("popularity")
-        dm = meta.get("duration_ms")
-        explicit = meta.get("explicit")
-        isrc = (meta.get("external_ids") or {}).get("isrc")
+        strict_year = title in multi_era_titles
 
-        streams = kworb_streams.get(sid)
-
-        matched_bb = match_chart_row(title, chart_rows, require_peak=True)
+        matched_bb = match_chart_row(
+            title,
+            chart_rows,
+            require_peak=True,
+            track_release_year=track_year,
+            corpus_primary=str(cl.get("primary_artist") or ""),
+            strict_year_match=strict_year,
+        )
+        matched_loose = match_chart_row(
+            title,
+            chart_rows,
+            require_peak=True,
+            ignore_release_year=True,
+            corpus_primary=str(cl.get("primary_artist") or ""),
+            strict_year_match=False,
+        )
         matched_riaa = (
             None
             if matched_bb and (matched_bb.get("riaa_blob") or "").find("RIAA") >= 0
-            else match_chart_row(title, chart_rows, require_peak=False, require_riaa=True)
+            else match_chart_row(
+                title,
+                chart_rows,
+                require_peak=False,
+                require_riaa=True,
+                track_release_year=track_year,
+                corpus_primary=str(cl.get("primary_artist") or ""),
+                strict_year_match=strict_year,
+            )
         )
 
         peak = weeks = debut = None
         riaa_cert = riaa_dt = ""
         charted = False
+        duration_sec: int | None = None
         if matched_bb:
-            info = chart_lookup.get(matched_bb["norm"])
+            ck: ChartRowId = chart_row_uid(matched_bb)
+            info = chart_lookup.get(ck)
             if info:
                 peak = info.get("peak")
                 weeks = info.get("weeks")
                 debut = info.get("debut_date")
+                duration_sec = info.get("duration_seconds")
                 riaa_cert = info.get("riaa_certification") or ""
                 riaa_dt = info.get("riaa_cert_date") or ""
                 charted = peak is not None
@@ -996,126 +989,265 @@ def main() -> int:
             riaa_dt = riaa_dt or (rd or "")
 
         notes: list[str] = []
-        if streams is None:
-            notes.append("kworb:not_on_kworb")
+        if kw_note:
+            notes.append(kw_note)
+        if matched_bb is None and matched_loose and track_year is not None:
+            cry = matched_loose.get("release_year")
+            if cry is not None:
+                wslug = "(song)" in ((matched_loose.get("wiki_slug") or "").lower())
+                if strict_year:
+                    mismatch = (wslug and int(cry) != int(track_year)) or (
+                        not wslug and abs(int(cry) - int(track_year)) > 1
+                    )
+                else:
+                    mismatch = abs(int(cry) - int(track_year)) > 2
+                if mismatch:
+                    other_era = find_attribution_era(title, int(cry), tid, feats)
+                    if other_era:
+                        notes.append(
+                            f'Billboard chart data removed; chart attribution belongs to {other_era}\'s '
+                            f'"{title}" track, not this era\'s track.'
+                        )
+                    else:
+                        notes.append(
+                            f'Billboard chart data removed; chart attribution belongs to the "{title}" '
+                            f"Hot 100 listing for Wikipedia release year {cry}, not this era's track."
+                        )
 
         perf_rows.append(
             {
                 "track_id": tid,
                 "track_title": title,
                 "album": album_disp,
-                "spotify_track_id": sid,
-                "spotify_popularity": pops if pops is not None else "",
-                "spotify_duration_ms": dm if dm is not None else "",
-                "spotify_explicit": ("True" if explicit else "False") if explicit is not None else "",
-                "spotify_isrc": isrc or "",
-                "kworb_total_streams": streams if streams is not None else "",
-                "kworb_fetch_date": kworb_date if streams is not None else "",
+                "kworb_total_streams": kw_streams_s,
+                "kworb_match_score": kw_score_s,
+                "kworb_fetch_date": kw_date_s,
                 "billboard_hot100_peak": peak if peak is not None else "",
                 "billboard_hot100_weeks_on_chart": weeks if weeks is not None else "",
                 "billboard_hot100_debut_date": debut if debut is not None else "",
                 "charted_hot100": "True" if charted else "False",
                 "riaa_certification": riaa_cert,
                 "riaa_cert_date": riaa_dt,
+                "duration_seconds": duration_sec if duration_sec is not None else "",
                 "fetch_timestamp": fetch_iso,
                 "parser_note": "; ".join(notes),
             }
         )
 
+    apply_final_phase4b_corrections(perf_rows, kworb_date=str(kworb_date or ""))
+
+    _perf_by_id_post = {r["track_id"]: r for r in perf_rows}
+    kworb_miss_rows = [
+        r
+        for r in kworb_miss_rows
+        if not str(_perf_by_id_post.get(r["track_id"], {}).get("kworb_total_streams", "")).strip()
+    ]
+
+    n_dur = sum(1 for r in perf_rows if str(r.get("duration_seconds", "")).strip() != "")
+    if not args.skip_wiki_enrich and n_dur < MIN_WIKI_DURATION_COVERAGE:
+        print(
+            f"STOP: Wikipedia infobox Length parsed for only {n_dur} tracks "
+            f"(minimum {MIN_WIKI_DURATION_COVERAGE}). Check extract_length_seconds_from_wiki_html.",
+            file=sys.stderr,
+        )
+        return 2
+
     collab_null_share_ids = write_sonic_csv(perf_rows, feats, cleaned_by_id, fetch_iso)
 
     OUT_PERF.parent.mkdir(parents=True, exist_ok=True)
-    pfnames = list(perf_rows[0].keys())
     with OUT_PERF.open("w", encoding="utf-8", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=pfnames)
+        w = csv.DictWriter(f, fieldnames=PERF_FIELDNAMES)
         w.writeheader()
         w.writerows(perf_rows)
 
+    kworb_miss_rows.sort(key=lambda r: -float(r["best_kworb_score"]))
+
+    perf_by_id = {r["track_id"]: r for r in perf_rows}
+    by_title_eras: dict[str, set[str]] = defaultdict(set)
+    for f in feats.values():
+        by_title_eras[f["track_title"]].add((f.get("era_clean") or "").strip())
+
+    collision_rows: list[dict[str, str]] = []
+    for title, eras in sorted(by_title_eras.items()):
+        if len(eras) < 2:
+            continue
+        era_sorted = sorted(eras)
+        has_bb = False
+        for tid, f in feats.items():
+            if f["track_title"] != title:
+                continue
+            if perf_by_id.get(tid, {}).get("charted_hot100") == "True":
+                has_bb = True
+                break
+        collision_rows.append(
+            {
+                "track_title": title,
+                "era_list": ";".join(era_sorted),
+                "n_eras": str(len(era_sorted)),
+                "has_billboard_data": "True" if has_bb else "False",
+            }
+        )
+
+    OUT_TITLE_COLLISIONS.parent.mkdir(parents=True, exist_ok=True)
+    with OUT_TITLE_COLLISIONS.open("w", encoding="utf-8", newline="") as f:
+        wc = csv.DictWriter(
+            f,
+            fieldnames=["track_title", "era_list", "n_eras", "has_billboard_data"],
+        )
+        wc.writeheader()
+        wc.writerows(collision_rows)
+
+    with OUT_KWORB_MISSES.open("w", encoding="utf-8", newline="") as f:
+        wkm = csv.DictWriter(
+            f,
+            fieldnames=[
+                "track_id",
+                "track_title",
+                "era_clean",
+                "year",
+                "best_kworb_match",
+                "best_kworb_score",
+            ],
+        )
+        wkm.writeheader()
+        wkm.writerows(kworb_miss_rows)
+
     n_tracks = len(perf_rows)
-    n_spotify = sum(1 for r in perf_rows if r["spotify_track_id"] != "not_on_spotify")
-    n_spotify_search_400 = sum(1 for n in search_fail_notes.values() if n == MSG_SPOTIFY_400)
-    n_spotify_search_other = len(search_fail_notes) - n_spotify_search_400
     n_kworb = sum(1 for r in perf_rows if str(r.get("kworb_total_streams", "")).strip() != "")
     n_bb = sum(1 for r in perf_rows if r.get("charted_hot100") == "True")
     n_riaa = sum(1 for r in perf_rows if str(r.get("riaa_certification", "")).strip() != "")
 
     stat_cols = [
-        "spotify_popularity",
-        "spotify_duration_ms",
-        "spotify_explicit",
-        "spotify_isrc",
         "kworb_total_streams",
+        "kworb_match_score",
         "kworb_fetch_date",
         "billboard_hot100_peak",
         "billboard_hot100_weeks_on_chart",
         "billboard_hot100_debut_date",
         "riaa_certification",
         "riaa_cert_date",
+        "duration_seconds",
         "parser_note",
     ]
     stats = null_stats(perf_rows, stat_cols)
 
     sonic_feats = list(csv.DictReader(OUT_SONIC.open(encoding="utf-8")))
     n_share_comp = sum(1 for r in sonic_feats if str(r.get("kanye_verse_share", "")).strip() != "")
+    n_wpm = sum(1 for r in sonic_feats if str(r.get("words_per_minute", "")).strip() != "")
 
     log_lines = [
         "# Phase 4b log",
         "",
         f"Generated: {fetch_iso}",
         "",
-        "## Spotify setup",
+        "## Methodology pivot (Spotify removed)",
         "",
-        "Add to `.env` (never commit secrets):",
+        "Phase 4b **no longer calls the Spotify Web API**. Earlier attempts hit recurring "
+        "operational failures: **HTTP 400** on quoted field-style queries; **HTTP 400** on "
+        "unquoted free-text queries containing symbols Lucene treats as operators; **HTTP 401** "
+        "from cached vs. rotated client credentials; **HTTP 429** throttling that persisted "
+        "across backoff attempts; and **HTTP 401** under heavy-throttle conditions. The pipeline "
+        "is now **Spotify-free**: Kworb cumulative streams (title fuzzy match), Wikipedia "
+        "singles discography (Billboard + RIAA), and Wikipedia song-page **Length** for durations.",
         "",
-        "- `SPOTIFY_CLIENT_ID`",
-        "- `SPOTIFY_CLIENT_SECRET`",
+        "## Final human corrections (Phase 4b lock)",
         "",
-        f"HTTP/token cache directory: `{CACHE_ROOT}`",
+        "- **King (Bully vs Vultures):** Wikipedia singles table lists a **Bully** «King» row under "
+        "release year **2026** with Hot 100 **peak 40**, separate from the ¥$ / Ty Dolla $ign "
+        "**Vultures** «King» row (Hot 100 **94**). The Bully corpus row **keeps** Billboard; "
+        "**Kworb** cumulative streams on that row were cleared because Kworb anchors the 35M figure "
+        "to the Vultures-era opener only (one table entry per title).",
+        "",
+        "- **Number One (College vs Late Registration):** Hot 100 lineage for Pharrell feat. Kanye "
+        "(2006) is documented on `number_one_late_registration`; the College Dropout album cut "
+        "`number_one_the_college_dropout` carries an explicit `parser_note` (no Hot 100).",
+        "",
+        "- **Sanctified (Yeezus vs TLOP):** Chart data attaches to the 2014-era corpus row "
+        "(`sanctified_the_life_of_pablo`); the Yeezus session row has Billboard cleared and a "
+        "matching `parser_note`.",
+        "",
+        "- **Manual Kworb (+2):** `buy_you_a_drank_remix_graduation` → Kworb «Buy U A Drank…» "
+        "(T-Pain spelling); `i_don_t_like_remix_cruel_summer_yeezus_build_up` → Kworb «Don't Like.1» "
+        "(duplicate suffix). Both use `kworb_match_score=100.00` after lyric review.",
         "",
         "## Rates",
         "",
-        f"- Spotify: ~5 requests/sec (`sleep {SPOTIFY_GAP:.2f}s` between calls).",
-        "- Kworb / Wikipedia: minimum 2s between hits per registrable domain.",
+        "- Kworb / Wikipedia: minimum **2 seconds** between network requests per registrable domain.",
+        f"- HTTP cache directory: `{CACHE_ROOT}`",
         "",
-        "## Aggregate metrics",
+        "## Kworb (title-only)",
         "",
-        f"- Tracks: **{n_tracks}**",
-        f"- Spotify matched (not `not_on_spotify`): **{n_spotify}** ({n_spotify / max(n_tracks,1):.1%})",
-        f"- Rows skipped after Spotify search HTTP 400: **{n_spotify_search_400}**",
-        f"- Rows skipped after other Spotify search failures: **{n_spotify_search_other}**",
-        "- Run `scripts/phase_4b_ghost_tracks.py` before integration to audit non-catalog rows "
-        "(`data/phase_4b_ghost_tracks.csv`).",
-        f"- Kworb streams present: **{n_kworb}** ({n_kworb / max(n_tracks,1):.1%})",
-        f"- Hot 100 charted (`charted_hot100=True`): **{n_bb}**",
-        f"- Non-empty RIAA certification column: **{n_riaa}**",
-        f"- `kanye_verse_share` computable (collab + full lyrics): **{n_share_comp}**",
-        f"- Collab rows with null verse_share (backfill candidates): **{len(collab_null_share_ids)}**",
-        "",
-        "## Spotify fuzzy gate",
-        "",
-        f"RapidFuzz `token_set_ratio` ≥ **{int(FUZZ_THRESHOLD)}** plus contextual artist-token gate.",
-        "",
-        "## Kworb rows without catalog Spotify ID",
-        "",
-        f"{len(kworb_orphans)} Spotify IDs on merged Kworb pages were not used after matching.",
+        f"- Merged song rows (both artist pages): **{len(kworb_rows)}**",
+        f"- RapidFuzz `token_set_ratio` threshold: **≥ {KWORB_FUZZ_THRESHOLD:g}** vs Kworb anchor title.",
+        f"- Corpus tracks with non-empty `kworb_total_streams`: **{n_kworb}** / **{n_tracks}** "
+        f"({n_kworb / max(n_tracks, 1):.1%}).",
+        f"- Tracks below threshold this run (listed in `parser_note` as `no_kworb_match`): **{len(kworb_review)}**",
         "",
     ]
-    for sid, ttl in sorted(kworb_orphans, key=lambda x: -kworb_streams.get(x[0], 0))[:40]:
-        log_lines.append(f"- `{sid}` — {ttl}")
-    if len(kworb_orphans) > 40:
-        log_lines.append(f"- … ({len(kworb_orphans) - 40} more)")
-    log_lines.extend(["", "## Wikipedia ambiguity / duplicate peaks", ""])
-    log_lines.extend(f"- {x}" for x in ambiguities[:80])
+    if args.continue_after_kworb_review and len(kworb_review) > MAX_KWORB_REVIEW_FAILS:
+        log_lines.extend(
+            [
+                "### Kworb gate override",
+                "",
+                f"Run used `--continue-after-kworb-review` with **{len(kworb_review)}** tracks below "
+                f"{KWORB_FUZZ_THRESHOLD:g} (more than the usual stop threshold of {MAX_KWORB_REVIEW_FAILS}). "
+                "Many are expected: mixtape / leak / alternate titles not present on Kworb Spotify tables.",
+                "",
+            ]
+        )
+    log_lines.extend(
+        [
+            "## Billboard Hot 100",
+            "",
+            "- Singles table rows carry a **release year** when Wikipedia lists a leading year cell "
+            "(including rowspan blocks). Chart matching requires RapidFuzz ≥ 85 on the normalized title "
+        "and, when both corpus `year` and table year exist, they must agree within **±2 years** "
+        "(or **exact year** when the same `track_title` appears under multiple `era_clean` values in "
+        "the features corpus). Rows are keyed by `wiki_slug` (`norm_slug`). Non–Kanye-West primaries "
+        "must align with that slug (`partial_ratio` gate) so feature rows do not latch onto the wrong song.",
+            "",
+            f"- Rows with `charted_hot100=True`: **{n_bb}**",
+            "",
+            "## RIAA",
+            "",
+            f"- Rows with non-empty `riaa_certification`: **{n_riaa}**",
+            "",
+            "## Wikipedia duration (infobox Length)",
+            "",
+            f"- Tracks with non-null `duration_seconds`: **{n_dur}** / **{n_tracks}** "
+            f"({n_dur / max(n_tracks, 1):.1%}).",
+            "- **Words per minute** and **lines per minute** in `kanye_track_sonic_derived.csv` are only "
+            "computed where `duration_seconds` is present (Wikipedia subset); other rows leave WPM/LPM empty.",
+            "",
+            "## Sonic derived",
+            "",
+            f"- `kanye_verse_share` computable (collab + full lyrics): **{n_share_comp}**",
+            f"- Rows with non-empty `words_per_minute` (duration-backed): **{n_wpm}**",
+            f"- Collab rows with null `kanye_verse_share` (backfill candidates): **{len(collab_null_share_ids)}**",
+            "",
+            "## Audit outputs",
+            "",
+            f"- `data/phase_4b_title_collisions.csv` — titles appearing under multiple `era_clean` values "
+            f"({len(collision_rows)} titles).",
+            f"- `data/phase_4b_kworb_misses.csv` — tracks below Kworb fuzzy {KWORB_FUZZ_THRESHOLD:g} "
+            f"({len(kworb_miss_rows)} rows), sorted by best score descending.",
+            "",
+            "## Wikipedia ambiguity / duplicate peaks",
+            "",
+        ]
+    )
+    log_lines.extend([f"- {x}" for x in ambiguities[:80]])
 
     LOG_MD.parent.mkdir(parents=True, exist_ok=True)
     LOG_MD.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
 
     print(fmt_perf_preview(perf_rows))
-    print("\n=== Match rates ===")
-    print(f"spotify_match_rate={n_spotify}/{n_tracks}")
+    print("\n=== Summary statistics ===")
     print(f"kworb_match_rate={n_kworb}/{n_tracks}")
     print(f"billboard_hot100_charted={n_bb}")
     print(f"riaa_non_empty_rows={n_riaa}")
+    print(f"wikipedia_duration_coverage={n_dur}/{n_tracks}")
+    print(f"sonic_wpm_populated={n_wpm}/{n_tracks}")
     print("\n=== Null / empty counts (performance CSV) ===")
     for c in stat_cols:
         print(f"  empty({c})={stats[c]}")
